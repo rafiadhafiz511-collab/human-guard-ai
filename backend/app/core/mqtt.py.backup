@@ -1,0 +1,135 @@
+import asyncio
+import json
+import logging
+from datetime import datetime, timezone
+import paho.mqtt.client as mqtt
+from sqlalchemy.orm import Session
+
+from app.database.database import SessionLocal
+from app.models.device import Device
+from app.core.websocket_manager import manager
+
+logger = logging.getLogger(__name__)
+
+# MQTT Config (পরিবেশ অনুযায়ী Host/Port আপডেট করুন)
+MQTT_BROKER_HOST = "broker.hivemq.com"  # অথবা আপনার নিজস্ব Mosquitto/HiveMQ ক্লাউড হোস্ট
+MQTT_BROKER_PORT = 1883
+MQTT_TOPIC_TELEMETRY = "humantech/devices/+/telemetry"
+MQTT_TOPIC_COMMAND = "humantech/devices/{device_id}/command"
+
+mqtt_client = mqtt.Client()
+
+
+def on_connect(client, userdata, flags, rc):
+    if rc == 0:
+        logger.info("Successfully connected to MQTT Broker!")
+        # সব ডিভাইসের টেলিমিতি টপিক সাবস্ক্রাইব করা (Topic wildcard: +)
+        client.subscribe(MQTT_TOPIC_TELEMETRY)
+        logger.info(f"Subscribed to topic: {MQTT_TOPIC_TELEMETRY}")
+    else:
+        logger.error(f"Failed to connect to MQTT Broker, return code {rc}")
+
+
+def on_message(client, userdata, msg):
+    """
+    ডিভাইস থেকে বার্তা আসলে এই অন-মেসেজ হুক রান করবে।
+    Topic format: humantech/devices/{device_id}/telemetry
+    Payload format: {"water_level": 15, "temperature": 31.2}
+    """
+    try:
+        topic_parts = msg.topic.split("/")
+        if len(topic_parts) >= 3:
+            device_id = topic_parts[2]
+            payload_str = msg.payload.decode("utf-8")
+            telemetry_data = json.loads(payload_str)
+
+            logger.info(f"[MQTT RECEIVED] Device: {device_id} | Data: {telemetry_data}")
+
+            # ডাটাবেজ সেশন খুলে ডাটা প্রসেস ও অটোমেশন ট্রিগার করা
+            db: Session = SessionLocal()
+            try:
+                # FIX: Device.id এর জায়গায় Device.device_id ফিল্টার
+                device = db.query(Device).filter(Device.device_id == device_id).first()
+                if device:
+                    # ১. ডিভাইসের Status এবং Last Seen আপডেট করা
+                    device.last_seen = datetime.now(timezone.utc)
+                    device.status = "online"
+                    db.add(device)
+                    db.commit()
+                    db.refresh(device)
+
+                    # Lazily import to avoid circular dependency during startup.
+                    from app.services.automation_engine import process_device_telemetry_or_state
+
+                    # ২. ডাটাবেজ আপডেট ও অটোমেশন রুল রান
+                    process_device_telemetry_or_state(
+                        db=db,
+                        home_id=str(device.home_id),
+                        device_id=str(device.id),
+                        incoming_data=telemetry_data
+                    )
+
+                    # ৩. WebSocket ব্রডকাস্ট (লাইভ ড্যাশবোর্ড আপডেটের জন্য)
+                    ws_payload = {
+                        "event": "device_telemetry_update",
+                        "device_id": str(device.id),
+                        "device_name": device.device_name,
+                        "data": telemetry_data
+                    }
+                    
+                    # Async event loop-এ ব্রডকাস্ট শিডিউল করা
+                    try:
+                        loop = asyncio.get_running_loop()
+                    except RuntimeError:
+                        loop = None
+
+                    if loop and loop.is_running():
+                        asyncio.run_coroutine_threadsafe(
+                            manager.broadcast_to_home(str(device.home_id), ws_payload),
+                            loop
+                        )
+                    else:
+                        asyncio.run(manager.broadcast_to_home(str(device.home_id), ws_payload))
+
+                else:
+                    logger.warning(f"MQTT Telemetry received for unknown device: {device_id}")
+            finally:
+                db.close()
+
+    except Exception as e:
+        logger.error(f"Error processing MQTT message: {str(e)}")
+
+
+def start_mqtt():
+    """FastAPI শুরুর সময় MQTT লুপ চালু করবে"""
+    mqtt_client.on_connect = on_connect
+    mqtt_client.on_message = on_message
+
+    # যদি Authentication প্রয়োজন হয়:
+    # mqtt_client.username_pw_set("your_username", "your_password")
+    
+    try:
+        mqtt_client.connect_async(MQTT_BROKER_HOST, MQTT_BROKER_PORT, 60)
+        mqtt_client.loop_start()  # ব্যাকগ্রাউন্ড থ্রেডে MQTT লুপ স্টার্ট হবে
+        logger.info("MQTT Client loop started asynchronously.")
+    except Exception as e:
+        logger.error(f"Failed to start MQTT Client: {str(e)}")
+
+
+def stop_mqtt():
+    """FastAPI বন্ধের সময় MQTT থামাবে"""
+    mqtt_client.loop_stop()
+    mqtt_client.disconnect()
+    logger.info("MQTT Client stopped.")
+
+
+def publish_device_command(device_id: str, command_payload: dict):
+    """
+    হার্ডওয়্যার ডিভাইসে কমান্ড পাঠানোর জন্য এটি ব্যবহৃত হবে।
+    Topic: humantech/devices/{device_id}/command
+    """
+    topic = MQTT_TOPIC_COMMAND.format(device_id=device_id)
+    payload = json.dumps(command_payload)
+    info = mqtt_client.publish(topic, payload, qos=1)
+    logger.info(f"[MQTT COMMAND SENT] Topic: {topic} | Payload: {payload}")
+    return info.is_published()

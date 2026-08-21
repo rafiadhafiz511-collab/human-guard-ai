@@ -1,0 +1,115 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* 1. Classic Light */
+:root[data-theme="light"] {
+  --bg-main: #f8fafc;
+  --bg-card: #ffffff;
+  --text-main: #0f172a;
+  --text-muted: #64748b;
+  --border-color: #e2e8f0;
+  --accent: #2563eb;
+}
+
+/* 2. Midnight Dark */
+:root[data-theme="dark"] {
+  --bg-main: #0f172a;
+  --bg-card: #1e293b;
+  --text-main: #f8fafc;
+  --text-muted: #94a3b8;
+  --border-color: #334155;
+  --accent: #3b82f6;
+}
+
+/* 3. Emerald Mint */
+:root[data-theme="emerald"] {
+  --bg-main: #022c22;
+  --bg-card: #064e3b;
+  --text-main: #ecfdf5;
+  --text-muted: #6ee7b7;
+  --border-color: #047857;
+  --accent: #10b981;
+}
+
+/* 4. Cyber Neon */
+:root[data-theme="cyber-blue"] {
+  --bg-main: #030712;
+  --bg-card: #111827;
+  --text-main: #f0f9ff;
+  --text-muted: #38bdf8;
+  --border-color: #1f2937;
+  --accent: #06b6d4;
+}
+
+/* 5. Sunset Amber */
+:root[data-theme="sunset-amber"] {
+  --bg-main: #291205;
+  --bg-card: #451a03;
+  --text-main: #fffbeb;
+  --text-muted: #fcd34d;
+  --border-color: #78350f;
+  --accent: #f59e0b;
+}
+
+/* 6. Electric Violet */
+:root[data-theme="electric-violet"] {
+  --bg-main: #1e1b4b;
+  --bg-card: #2e1065;
+  --text-main: #faf5ff;
+  --text-muted: #c084fc;
+  --border-color: #4c1d95;
+  --accent: #a855f7;
+}
+
+/* 7. Nordic Slate */
+:root[data-theme="nordic-slate"] {
+  --bg-main: #111827;
+  --bg-card: #1f2937;
+  --text-main: #f3f4f6;
+  --text-muted: #9ca3af;
+  --border-color: #374151;
+  --accent: #6366f1;
+}
+
+/* 8. Crimson Rose (Fixing Screen Bug) */
+:root[data-theme="crimson-rose"] {
+  --bg-main: #2a0812;
+  --bg-card: #4c0519;
+  --text-main: #fff1f2;
+  --text-muted: #fda4af;
+  --border-color: #881337;
+  --accent: #f43f5e;
+}
+
+/* 9. Deep Forest */
+:root[data-theme="forest-green"] {
+  --bg-main: #052e16;
+  --bg-card: #14532d;
+  --text-main: #f0fdf4;
+  --text-muted: #4ade80;
+  --border-color: #166534;
+  --accent: #22c55e;
+}
+
+/* 10. Warm Coffee */
+:root[data-theme="coffee-warm"] {
+  --bg-main: #1c1412;
+  --bg-card: #2f1d18;
+  --text-main: #fff7ed;
+  --text-muted: #fb923c;
+  --border-color: #442820;
+  --accent: #ea580c;
+}
+
+/* Root & Global Body Styles */
+body {
+  background-color: var(--bg-main);
+  color: var(--text-main);
+  transition: background-color 0.25s ease, color 0.25s ease;
+}
+
+body {
+  background-color: var(--bg-main) !important;
+  color: var(--text-main) !important;
+}

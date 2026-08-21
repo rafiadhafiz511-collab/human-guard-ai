@@ -1,0 +1,231 @@
+from datetime import datetime, timedelta, timezone
+
+from fastapi import APIRouter, Depends
+from sqlalchemy import func
+from sqlalchemy.orm import Session
+
+from app.database.database import get_db
+from app.models.detection import Detection
+from app.models.device import Device
+from app.models.device_command import DeviceCommand as DeviceCommandModel
+
+
+router = APIRouter(
+    prefix="/dashboard",
+    tags=["Dashboard"],
+)
+
+
+@router.get("/")
+def dashboard_stats(
+    db: Session = Depends(get_db),
+):
+    """
+    Return dashboard statistics.
+    """
+
+    # ============================================================
+    # TIME
+    # ============================================================
+
+    now = datetime.now(timezone.utc)
+
+    # Device is considered offline if no heartbeat
+    # was received within the last 60 seconds.
+    offline_time = now - timedelta(seconds=60)
+
+    # Start of today
+    today_start = now.replace(
+        hour=0,
+        minute=0,
+        second=0,
+        microsecond=0,
+    )
+
+    # ============================================================
+    # DETECTION STATISTICS
+    # ============================================================
+
+    total_detections = (
+        db.query(func.count(Detection.id))
+        .scalar()
+        or 0
+    )
+
+    total_humans = (
+        db.query(func.count(Detection.id))
+        .filter(Detection.person.is_(True))
+        .scalar()
+        or 0
+    )
+
+    total_alarms = (
+        db.query(func.count(Detection.id))
+        .filter(Detection.alarm.is_(True))
+        .scalar()
+        or 0
+    )
+
+    today_detections = (
+        db.query(func.count(Detection.id))
+        .filter(Detection.created_at >= today_start)
+        .scalar()
+        or 0
+    )
+
+    today_humans = (
+        db.query(func.count(Detection.id))
+        .filter(
+            Detection.created_at >= today_start,
+            Detection.person.is_(True),
+        )
+        .scalar()
+        or 0
+    )
+
+    today_alarms = (
+        db.query(func.count(Detection.id))
+        .filter(
+            Detection.created_at >= today_start,
+            Detection.alarm.is_(True),
+        )
+        .scalar()
+        or 0
+    )
+
+    # ============================================================
+    # DEVICE STATISTICS
+    # ============================================================
+
+    total_devices = (
+        db.query(func.count(Device.id))
+        .scalar()
+        or 0
+    )
+
+    online_devices = (
+        db.query(func.count(Device.id))
+        .filter(Device.last_seen >= offline_time)
+        .scalar()
+        or 0
+    )
+
+    offline_devices = total_devices - online_devices
+
+    # ============================================================
+    # COMMAND STATISTICS
+    # ============================================================
+
+    total_commands = (
+        db.query(func.count(DeviceCommandModel.id))
+        .scalar()
+        or 0
+    )
+
+    pending_commands = (
+        db.query(func.count(DeviceCommandModel.id))
+        .filter(DeviceCommandModel.status == "pending")
+        .scalar()
+        or 0
+    )
+
+    sent_commands = (
+        db.query(func.count(DeviceCommandModel.id))
+        .filter(DeviceCommandModel.status == "sent")
+        .scalar()
+        or 0
+    )
+
+    completed_commands = (
+        db.query(func.count(DeviceCommandModel.id))
+        .filter(DeviceCommandModel.status == "completed")
+        .scalar()
+        or 0
+    )
+
+    failed_commands = (
+        db.query(func.count(DeviceCommandModel.id))
+        .filter(DeviceCommandModel.status == "failed")
+        .scalar()
+        or 0
+    )
+
+    # ============================================================
+    # LATEST DETECTION
+    # ============================================================
+
+    latest_detection = (
+        db.query(Detection)
+        .order_by(Detection.created_at.desc())
+        .first()
+    )
+
+    # ============================================================
+    # LATEST COMMAND
+    # ============================================================
+
+    latest_command = (
+        db.query(DeviceCommandModel)
+        .order_by(DeviceCommandModel.created_at.desc())
+        .first()
+    )
+
+    # ============================================================
+    # RESPONSE
+    # ============================================================
+
+    return {
+        "detections": {
+            "total": total_detections,
+            "humans": total_humans,
+            "alarms": total_alarms,
+            "today": today_detections,
+            "today_humans": today_humans,
+            "today_alarms": today_alarms,
+        },
+
+        "devices": {
+            "total": total_devices,
+            "online": online_devices,
+            "offline": offline_devices,
+        },
+
+        "commands": {
+            "total": total_commands,
+            "pending": pending_commands,
+            "sent": sent_commands,
+            "completed": completed_commands,
+            "failed": failed_commands,
+        },
+
+        "latest_detection": (
+            latest_detection.created_at.isoformat()
+            if latest_detection
+            else None
+        ),
+
+        "latest_command": (
+            {
+                "id": latest_command.id,
+                "device_id": latest_command.device_id,
+                "command": latest_command.command,
+                "status": latest_command.status,
+                "created_at": latest_command.created_at.isoformat(),
+                "sent_at": (
+                    latest_command.sent_at.isoformat()
+                    if latest_command.sent_at
+                    else None
+                ),
+                "completed_at": (
+                    latest_command.completed_at.isoformat()
+                    if latest_command.completed_at
+                    else None
+                ),
+            }
+            if latest_command
+            else None
+        ),
+
+        "server_time": now.isoformat(),
+        "offline_after_seconds": 60,
+    }
