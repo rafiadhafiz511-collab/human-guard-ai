@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.auth.dependencies import get_current_user
-from app.auth.permissions import require_admin
+from app.auth.permissions import require_admin, verify_home_access
 from app.core.security import authenticate_device
 from app.database.database import get_db
 from app.models.device import Device
@@ -356,13 +356,27 @@ def send_command(
     current_user: User = Depends(get_current_user),
 ):
     """
-    Create a command for a device.
+    Create a command for a device with home access verification for non-admins.
 
     Command lifecycle:
         pending -> sent -> completed / failed
     """
 
     device = get_device_or_404(device_id, db)
+
+    if current_user.role != "admin":
+        if not device.home_id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Device is not assigned to a home",
+            )
+
+        verify_home_access(
+            db=db,
+            user_id=current_user.id,
+            home_id=device.home_id,
+            required_roles=["OWNER", "ADMIN", "MEMBER"],
+        )
 
     try:
         command = create_device_command(

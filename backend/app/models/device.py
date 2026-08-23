@@ -67,11 +67,12 @@ class Device(Base):
     # ============================================================
 
     claim_status = Column(
-        String(20),
-        nullable=False,
-        default="CLAIMED",
-        index=True,
-    )
+    String(20),
+    nullable=False,
+    default="UNCLAIMED",
+    server_default="UNCLAIMED",
+    index=True,
+)
 
     lifecycle_status = Column(
         String(20),

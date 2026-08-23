@@ -32,7 +32,6 @@ export default function Dashboard() {
   };
 
   const handleDeviceAdded = () => {
-    // ডিভাইস যোগ হওয়ার পর ডেটা রিফ্রেশ লজিক এখানে দিতে পারেন
     console.log("Device list updated successfully!");
   };
 
@@ -42,11 +41,11 @@ export default function Dashboard() {
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <div className="flex items-center gap-3">
-            <h1 className="text-2xl font-black text-white tracking-wide">
+            <h1 className="text-2xl font-black tracking-wide text-white">
               Human Tech Engine
             </h1>
             <span className="flex items-center gap-1.5 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-0.5 text-xs font-semibold text-emerald-400">
-              <span className="h-2 w-2 rounded-full bg-emerald-400 animate-ping" />
+              <span className="h-2 w-2 animate-ping rounded-full bg-emerald-400" />
               MQTT Live
             </span>
           </div>
@@ -69,10 +68,12 @@ export default function Dashboard() {
           </select>
 
           <button
+            type="button"
             onClick={() => setIsModalOpen(true)}
-            className="flex items-center gap-2 rounded-xl bg-cyan-500 px-4 py-2 text-sm font-bold text-black transition hover:bg-cyan-400 active:scale-95"
+            className="flex items-center gap-2 rounded-xl bg-cyan-500 px-4 py-2 text-sm font-bold text-slate-950 transition hover:bg-cyan-400 active:scale-95"
           >
-            <span>+</span> Add Device
+            <span>+</span>
+            <span>Add Device</span>
           </button>
         </div>
       </div>
@@ -87,7 +88,9 @@ export default function Dashboard() {
           </div>
           <div className="mt-3 flex items-baseline gap-2">
             <span className="text-3xl font-black text-white">42</span>
-            <span className="text-xs text-emerald-400 font-semibold">38 Active</span>
+            <span className="text-xs font-semibold text-emerald-400">
+              38 Active
+            </span>
           </div>
           <p className="mt-2 text-[11px] text-white/40">4 Devices Offline</p>
         </div>
@@ -95,12 +98,16 @@ export default function Dashboard() {
         {/* LIVE POWER LOAD */}
         <div className="rounded-3xl border border-white/10 bg-black/40 p-5 backdrop-blur-xl">
           <div className="flex items-center justify-between text-white/40">
-            <span className="text-xs font-bold uppercase">Current Power Load</span>
+            <span className="text-xs font-bold uppercase">
+              Current Power Load
+            </span>
             <span className="text-lg">⚡</span>
           </div>
           <div className="mt-3 flex items-baseline gap-2">
             <span className="text-3xl font-black text-cyan-400">1.10 kW</span>
-            <span className="text-xs text-cyan-400/80 font-mono">220V / 5.0A</span>
+            <span className="font-mono text-xs text-cyan-400/80">
+              220V / 5.0A
+            </span>
           </div>
           <p className="mt-2 text-[11px] text-white/40">Peak today: 1.85 kW</p>
         </div>
@@ -115,7 +122,9 @@ export default function Dashboard() {
             <span className="text-3xl font-black text-white">৳ 84.50</span>
             <span className="text-xs text-white/50">(8.45 kWh)</span>
           </div>
-          <p className="mt-2 text-[11px] text-emerald-400">Est. Monthly: ৳ 2,530</p>
+          <p className="mt-2 text-[11px] text-emerald-400">
+            Est. Monthly: ৳ 2,530
+          </p>
         </div>
 
         {/* SECURITY & ALERTS */}
@@ -134,9 +143,11 @@ export default function Dashboard() {
       {/* 3. QUICK SCENES / ONE-TAP MODES */}
       <div className="rounded-3xl border border-white/10 bg-black/40 p-6 backdrop-blur-xl">
         <div className="mb-4 flex items-center justify-between">
-          <h2 className="text-base font-bold text-white">One-Tap Smart Scenes</h2>
+          <h2 className="text-base font-bold text-white">
+            One-Tap Smart Scenes
+          </h2>
           {quickScene && (
-            <span className="text-xs text-cyan-400 animate-pulse font-mono">
+            <span className="animate-pulse font-mono text-xs text-cyan-400">
               Executing Scene: {quickScene}...
             </span>
           )}
@@ -177,10 +188,16 @@ export default function Dashboard() {
       <div className="rounded-3xl border border-white/10 bg-black/40 p-6 backdrop-blur-xl">
         <div className="mb-6 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
           <div>
-            <h2 className="text-lg font-bold text-white">Live Power Consumption</h2>
-            <p className="text-xs text-white/40">Aggregated Wattage (W) over 24 hours</p>
+            <h2 className="text-lg font-bold text-white">
+              Live Power Consumption
+            </h2>
+            <p className="text-xs text-white/40">
+              Aggregated Wattage (W) over 24 hours
+            </p>
           </div>
-          <span className="font-mono text-xs text-cyan-400">Refresh Rate: 1s</span>
+          <span className="font-mono text-xs text-cyan-400">
+            Refresh Rate: 1s
+          </span>
         </div>
 
         <div className="h-64 w-full">

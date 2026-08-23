@@ -30,7 +30,6 @@ def login(
     form_data: OAuth2PasswordRequestForm = Depends(),
     db: Session = Depends(get_db),
 ):
-
     user = (
         db.query(User)
         .filter(User.email == form_data.username)
@@ -77,16 +76,27 @@ def google_firebase_login(
                 detail="Email not provided by Firebase token",
             )
 
-        # 2. Check or Create User in local database
+        # 2. Check or Create User in local database with Admin Role Check
         user = db.query(User).filter(User.email == email).first()
+
         if not user:
             user = User(
                 email=email,
                 name=name,
+                role="admin" if email.lower() == "rafiadhafiz511@gmail.com" else "customer",
             )
             db.add(user)
             db.commit()
             db.refresh(user)
+        else:
+            # Promote the designated Google account to system admin
+            if (
+                email.lower() == "rafiadhafiz511@gmail.com"
+                and getattr(user, "role", None) != "admin"
+            ):
+                user.role = "admin"
+                db.commit()
+                db.refresh(user)
 
         # 3. Create Custom Backend Access Token using User ID
         access_token = create_access_token({"sub": str(user.id)})
@@ -98,6 +108,7 @@ def google_firebase_login(
                 "id": user.id,
                 "email": user.email,
                 "name": user.name,
+                "role": user.role,
             },
         }
 
@@ -122,6 +133,7 @@ def get_me(
         "id": current_user.id,
         "name": current_user.name,
         "email": current_user.email,
+        "role": getattr(current_user, "role", "customer"),
     }
 
 
