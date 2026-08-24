@@ -7,6 +7,8 @@ from app.database.database import get_db
 from app.models.home import Home
 from app.models.home_member import HomeMember
 from app.models.user import User
+from app.schemas.home import HomeCreate, HomeResponse, HomeUpdate
+
 
 router = APIRouter(
     prefix="/homes",
@@ -15,7 +17,7 @@ router = APIRouter(
 
 
 # ============================================================
-# SCHEMAS
+# MEMBER SCHEMAS
 # ============================================================
 
 class AddMemberSchema(BaseModel):
@@ -26,23 +28,20 @@ class AddMemberSchema(BaseModel):
 class UpdateMemberRoleSchema(BaseModel):
     role: str
 
-class CreateHomeSchema(BaseModel):
-    name: str
-
 
 # ============================================================
 # CREATE HOME
 # ============================================================
 
-@router.post("/")
+@router.post("/", response_model=HomeResponse)
 def create_home(
-    payload: CreateHomeSchema,
+    payload: HomeCreate,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     """
-    Create a new home and automatically add the owner as ADMIN
-    in home_members.
+    Create a new home and automatically add the owner
+    as ADMIN in home_members.
     """
 
     name = payload.name.strip()
@@ -81,59 +80,70 @@ def create_home(
             detail="Failed to create home",
         )
 
-    return {
-        "success": True,
-        "id": home.id,
-        "name": home.name,
-        "owner_id": home.owner_id,
-        "created_at": home.created_at,
-    }
+    return home
 
 
 # ============================================================
-# GET MY HOMES (Owned + Member Homes)
+# GET MY HOMES
+# Owned + Member Homes
 # ============================================================
 
-@router.get("/")
+@router.get("/", response_model=list[HomeResponse])
 def get_my_homes(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     """
-    Get all homes where current user is Owner OR a Member.
+    Get all homes where current user is either:
+    - Owner
+    - Member
     """
-    owned_homes = db.query(Home).filter(Home.owner_id == current_user.id).all()
+
+    owned_homes = (
+        db.query(Home)
+        .filter(Home.owner_id == current_user.id)
+        .all()
+    )
 
     member_home_ids = (
         db.query(HomeMember.home_id)
         .filter(HomeMember.user_id == current_user.id)
     )
+
     membership_homes = (
         db.query(Home)
         .filter(Home.id.in_(member_home_ids))
         .all()
     )
 
-    all_homes_dict = {home.id: home for home in (owned_homes + membership_homes)}
-    all_homes = list(all_homes_dict.values())
+    all_homes_dict = {
+        home.id: home
+        for home in (owned_homes + membership_homes)
+    }
 
-    return all_homes
+    return list(all_homes_dict.values())
 
 
 # ============================================================
 # GET SINGLE HOME
 # ============================================================
 
-@router.get("/{home_id}")
+@router.get("/{home_id}", response_model=HomeResponse)
 def get_home(
     home_id: str,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     """
-    Get single home details if user is Owner or Member.
+    Get single home details if current user is
+    Owner or Member.
     """
-    home = db.query(Home).filter(Home.id == home_id).first()
+
+    home = (
+        db.query(Home)
+        .filter(Home.id == home_id)
+        .first()
+    )
 
     if not home:
         raise HTTPException(
@@ -142,6 +152,7 @@ def get_home(
         )
 
     if home.owner_id != current_user.id:
+
         is_member = (
             db.query(HomeMember)
             .filter(
@@ -150,6 +161,7 @@ def get_home(
             )
             .first()
         )
+
         if not is_member:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
@@ -161,18 +173,21 @@ def get_home(
 
 # ============================================================
 # UPDATE HOME
+# Owner Only
 # ============================================================
 
-@router.patch("/{home_id}")
+@router.patch("/{home_id}", response_model=HomeResponse)
 def update_home(
     home_id: str,
-    name: str,
+    payload: HomeUpdate,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     """
-    Update home name (Owner only).
+    Update home name.
+    Owner only.
     """
+
     home = (
         db.query(Home)
         .filter(
@@ -188,7 +203,8 @@ def update_home(
             detail="Home not found or access denied",
         )
 
-    name = name.strip()
+    name = payload.name.strip()
+
     if not name:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -200,24 +216,21 @@ def update_home(
     try:
         db.commit()
         db.refresh(home)
+
     except Exception:
         db.rollback()
+
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to update home",
         )
 
-    return {
-        "success": True,
-        "id": home.id,
-        "name": home.name,
-        "owner_id": home.owner_id,
-        "created_at": home.created_at,
-    }
+    return home
 
 
 # ============================================================
 # DELETE HOME
+# Owner Only
 # ============================================================
 
 @router.delete("/{home_id}")
@@ -227,8 +240,10 @@ def delete_home(
     current_user: User = Depends(get_current_user),
 ):
     """
-    Delete a home (Owner only).
+    Delete a home.
+    Owner only.
     """
+
     home = (
         db.query(Home)
         .filter(
@@ -247,8 +262,10 @@ def delete_home(
     try:
         db.delete(home)
         db.commit()
+
     except Exception:
         db.rollback()
+
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to delete home",
@@ -262,7 +279,8 @@ def delete_home(
 
 
 # ============================================================
-# ASSIGN / REMOVE / GET DEVICES
+# ASSIGN DEVICE TO HOME
+# Owner Only
 # ============================================================
 
 @router.post("/{home_id}/devices/{device_id}")
@@ -272,26 +290,59 @@ def assign_device_to_home(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    home = db.query(Home).filter(Home.id == home_id, Home.owner_id == current_user.id).first()
+    """
+    Assign an unassigned device to a home.
+    Owner only.
+    """
+
+    home = (
+        db.query(Home)
+        .filter(
+            Home.id == home_id,
+            Home.owner_id == current_user.id,
+        )
+        .first()
+    )
+
     if not home:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Home not found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Home not found",
+        )
 
     from app.models.device import Device
-    device = db.query(Device).filter(Device.device_id == device_id).first()
+
+    device = (
+        db.query(Device)
+        .filter(Device.device_id == device_id)
+        .first()
+    )
+
     if not device:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Device not found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Device not found",
+        )
 
     if device.home_id is not None:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Device is already assigned to a home")
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Device is already assigned to a home",
+        )
 
     device.home_id = home.id
 
     try:
         db.commit()
         db.refresh(device)
+
     except Exception:
         db.rollback()
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to assign device")
+
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to assign device",
+        )
 
     return {
         "success": True,
@@ -301,6 +352,11 @@ def assign_device_to_home(
     }
 
 
+# ============================================================
+# REMOVE DEVICE FROM HOME
+# Owner Only
+# ============================================================
+
 @router.delete("/{home_id}/devices/{device_id}")
 def remove_device_from_home(
     home_id: str,
@@ -308,23 +364,56 @@ def remove_device_from_home(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    home = db.query(Home).filter(Home.id == home_id, Home.owner_id == current_user.id).first()
+    """
+    Remove a device from a home.
+    Owner only.
+    """
+
+    home = (
+        db.query(Home)
+        .filter(
+            Home.id == home_id,
+            Home.owner_id == current_user.id,
+        )
+        .first()
+    )
+
     if not home:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Home not found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Home not found",
+        )
 
     from app.models.device import Device
-    device = db.query(Device).filter(Device.device_id == device_id, Device.home_id == home.id).first()
+
+    device = (
+        db.query(Device)
+        .filter(
+            Device.device_id == device_id,
+            Device.home_id == home.id,
+        )
+        .first()
+    )
+
     if not device:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Device is not assigned to this home")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Device is not assigned to this home",
+        )
 
     device.home_id = None
 
     try:
         db.commit()
         db.refresh(device)
+
     except Exception:
         db.rollback()
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to remove device")
+
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to remove device",
+        )
 
     return {
         "success": True,
@@ -334,23 +423,59 @@ def remove_device_from_home(
     }
 
 
+# ============================================================
+# GET HOME DEVICES
+# Owner OR Member
+# ============================================================
+
 @router.get("/{home_id}/devices")
 def get_home_devices(
     home_id: str,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    home = db.query(Home).filter(Home.id == home_id).first()
+    """
+    Get all devices assigned to a home.
+    Owner or Member can access.
+    """
+
+    home = (
+        db.query(Home)
+        .filter(Home.id == home_id)
+        .first()
+    )
+
     if not home:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Home not found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Home not found",
+        )
 
     if home.owner_id != current_user.id:
-        is_member = db.query(HomeMember).filter(HomeMember.home_id == home_id, HomeMember.user_id == current_user.id).first()
+
+        is_member = (
+            db.query(HomeMember)
+            .filter(
+                HomeMember.home_id == home_id,
+                HomeMember.user_id == current_user.id,
+            )
+            .first()
+        )
+
         if not is_member:
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Access denied",
+            )
 
     from app.models.device import Device
-    devices = db.query(Device).filter(Device.home_id == home.id).order_by(Device.device_name.asc()).all()
+
+    devices = (
+        db.query(Device)
+        .filter(Device.home_id == home.id)
+        .order_by(Device.device_name.asc())
+        .all()
+    )
 
     return {
         "success": True,
@@ -362,7 +487,8 @@ def get_home_devices(
 
 
 # ============================================================
-# HOME MEMBERS MANAGEMENT
+# ADD MEMBER TO HOME
+# Owner OR ADMIN
 # ============================================================
 
 @router.post("/{home_id}/members")
@@ -372,11 +498,29 @@ def add_member_to_home(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    home = db.query(Home).filter(Home.id == home_id).first()
+    """
+    Add a user to a home.
+    Only Home Owner or Home ADMIN can add members.
+    """
+
+    home = (
+        db.query(Home)
+        .filter(Home.id == home_id)
+        .first()
+    )
+
     if not home:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Home not found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Home not found",
+        )
+
+    # --------------------------------------------------------
+    # Permission Check
+    # --------------------------------------------------------
 
     if home.owner_id != current_user.id:
+
         requester_member = (
             db.query(HomeMember)
             .filter(
@@ -386,40 +530,88 @@ def add_member_to_home(
             )
             .first()
         )
+
         if not requester_member:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Only Home Owner or ADMIN can add members",
             )
 
-    target_user = db.query(User).filter(User.email == payload.email).first()
+    # --------------------------------------------------------
+    # Validate Role
+    # --------------------------------------------------------
+
+    role = payload.role.upper()
+
+    if role not in {"ADMIN", "MEMBER"}:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid role. Allowed roles: ADMIN, MEMBER",
+        )
+
+    # --------------------------------------------------------
+    # Find Target User
+    # --------------------------------------------------------
+
+    target_user = (
+        db.query(User)
+        .filter(User.email == payload.email)
+        .first()
+    )
+
     if not target_user:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User with this email not found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User with this email not found",
+        )
+
+    # --------------------------------------------------------
+    # Owner Protection
+    # --------------------------------------------------------
 
     if target_user.id == home.owner_id:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Home owner is already an admin")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Home owner is already the owner",
+        )
+
+    # --------------------------------------------------------
+    # Duplicate Membership Check
+    # --------------------------------------------------------
 
     existing_member = (
         db.query(HomeMember)
-        .filter(HomeMember.home_id == home_id, HomeMember.user_id == target_user.id)
+        .filter(
+            HomeMember.home_id == home_id,
+            HomeMember.user_id == target_user.id,
+        )
         .first()
     )
+
     if existing_member:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="User is already a member of this home")
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="User is already a member of this home",
+        )
 
     new_member = HomeMember(
         home_id=home_id,
         user_id=target_user.id,
-        role=payload.role.upper(),
+        role=role,
     )
 
     try:
         db.add(new_member)
         db.commit()
         db.refresh(new_member)
+
     except Exception:
         db.rollback()
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to add member")
+
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to add member",
+        )
 
     return {
         "success": True,
@@ -436,30 +628,65 @@ def add_member_to_home(
     }
 
 
+# ============================================================
+# GET HOME MEMBERS
+# Owner OR Member
+# ============================================================
+
 @router.get("/{home_id}/members")
 def get_home_members(
     home_id: str,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    home = db.query(Home).filter(Home.id == home_id).first()
-    if not home:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Home not found")
+    """
+    Get all members of a home.
+    Owner or Member can view.
+    """
 
+    home = (
+        db.query(Home)
+        .filter(Home.id == home_id)
+        .first()
+    )
+
+    if not home:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Home not found",
+        )
+
+    # --------------------------------------------------------
     # Permission Check
+    # --------------------------------------------------------
+
     if home.owner_id != current_user.id:
+
         is_member = (
             db.query(HomeMember)
-            .filter(HomeMember.home_id == home_id, HomeMember.user_id == current_user.id)
+            .filter(
+                HomeMember.home_id == home_id,
+                HomeMember.user_id == current_user.id,
+            )
             .first()
         )
-        if not is_member:
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
 
-    # Fetch DB Members
+        if not is_member:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Access denied",
+            )
+
+    # --------------------------------------------------------
+    # Fetch Members
+    # --------------------------------------------------------
+
     members = (
         db.query(HomeMember, User)
-        .join(User, HomeMember.user_id == User.id)
+        .join(
+            User,
+            HomeMember.user_id == User.id,
+        )
         .filter(HomeMember.home_id == home_id)
         .all()
     )
@@ -468,6 +695,7 @@ def get_home_members(
     has_owner_in_members = False
 
     for member, user in members:
+
         if user.id == home.owner_id:
             has_owner_in_members = True
 
@@ -477,14 +705,27 @@ def get_home_members(
                 "user_id": user.id,
                 "name": user.name,
                 "email": user.email,
-                "role": "OWNER" if user.id == home.owner_id else member.role,
+                "role": (
+                    "OWNER"
+                    if user.id == home.owner_id
+                    else member.role
+                ),
                 "created_at": member.created_at,
             }
         )
 
-    # Fallback: DB তে Owner না থাকলে ম্যানুয়ালি সংযুক্ত করা
+    # --------------------------------------------------------
+    # Fallback Owner
+    # --------------------------------------------------------
+
     if not has_owner_in_members:
-        owner_user = db.query(User).filter(User.id == home.owner_id).first()
+
+        owner_user = (
+            db.query(User)
+            .filter(User.id == home.owner_id)
+            .first()
+        )
+
         if owner_user:
             members_list.insert(
                 0,
@@ -506,6 +747,11 @@ def get_home_members(
     }
 
 
+# ============================================================
+# UPDATE MEMBER ROLE
+# Owner Only
+# ============================================================
+
 @router.patch("/{home_id}/members/{user_id}")
 def update_member_role(
     home_id: str,
@@ -514,29 +760,87 @@ def update_member_role(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    home = db.query(Home).filter(Home.id == home_id).first()
+    """
+    Update a member's role.
+    Only Home Owner can modify roles.
+    """
+
+    home = (
+        db.query(Home)
+        .filter(Home.id == home_id)
+        .first()
+    )
+
     if not home:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Home not found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Home not found",
+        )
+
+    # --------------------------------------------------------
+    # Owner Only
+    # --------------------------------------------------------
 
     if home.owner_id != current_user.id:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only Home Owner can modify roles")
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only Home Owner can modify roles",
+        )
+
+    # --------------------------------------------------------
+    # Prevent Owner Role Modification
+    # --------------------------------------------------------
+
+    if user_id == home.owner_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Home owner's role cannot be changed",
+        )
+
+    # --------------------------------------------------------
+    # Validate Role
+    # --------------------------------------------------------
+
+    role = payload.role.upper()
+
+    if role not in {"ADMIN", "MEMBER"}:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid role. Allowed roles: ADMIN, MEMBER",
+        )
+
+    # --------------------------------------------------------
+    # Find Member
+    # --------------------------------------------------------
 
     member = (
         db.query(HomeMember)
-        .filter(HomeMember.home_id == home_id, HomeMember.user_id == user_id)
+        .filter(
+            HomeMember.home_id == home_id,
+            HomeMember.user_id == user_id,
+        )
         .first()
     )
-    if not member:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Member not found")
 
-    member.role = payload.role.upper()
+    if not member:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Member not found",
+        )
+
+    member.role = role
 
     try:
         db.commit()
         db.refresh(member)
+
     except Exception:
         db.rollback()
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to update role")
+
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to update role",
+        )
 
     return {
         "success": True,
@@ -546,6 +850,11 @@ def update_member_role(
     }
 
 
+# ============================================================
+# REMOVE MEMBER FROM HOME
+# Owner / ADMIN / Self
+# ============================================================
+
 @router.delete("/{home_id}/members/{user_id}")
 def remove_member_from_home(
     home_id: str,
@@ -553,11 +862,44 @@ def remove_member_from_home(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    home = db.query(Home).filter(Home.id == home_id).first()
+    """
+    Remove a member from a home.
+
+    Rules:
+    - Owner can remove anyone except the owner.
+    - ADMIN can remove members.
+    - A member can remove themselves.
+    - Owner cannot be removed.
+    """
+
+    home = (
+        db.query(Home)
+        .filter(Home.id == home_id)
+        .first()
+    )
+
     if not home:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Home not found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Home not found",
+        )
+
+    # --------------------------------------------------------
+    # Owner Protection
+    # --------------------------------------------------------
+
+    if user_id == home.owner_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Home owner cannot be removed",
+        )
+
+    # --------------------------------------------------------
+    # Permission Check
+    # --------------------------------------------------------
 
     if home.owner_id != current_user.id and current_user.id != user_id:
+
         requester_member = (
             db.query(HomeMember)
             .filter(
@@ -567,23 +909,47 @@ def remove_member_from_home(
             )
             .first()
         )
+
         if not requester_member:
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized")
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Not authorized",
+            )
+
+    # --------------------------------------------------------
+    # Find Target Member
+    # --------------------------------------------------------
 
     member = (
         db.query(HomeMember)
-        .filter(HomeMember.home_id == home_id, HomeMember.user_id == user_id)
+        .filter(
+            HomeMember.home_id == home_id,
+            HomeMember.user_id == user_id,
+        )
         .first()
     )
+
     if not member:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Member not found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Member not found",
+        )
+
+    # --------------------------------------------------------
+    # Delete Membership
+    # --------------------------------------------------------
 
     try:
         db.delete(member)
         db.commit()
+
     except Exception:
         db.rollback()
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to remove member")
+
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to remove member",
+        )
 
     return {
         "success": True,

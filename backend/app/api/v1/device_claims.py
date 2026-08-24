@@ -1,16 +1,17 @@
 from fastapi import APIRouter, Depends, HTTPException, status
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.auth.dependencies import get_current_user
 from app.auth.permissions import verify_home_access
 from app.database.database import get_db
+from app.models.device import Device
 from app.models.user import User
 from app.services.device_claim_service import (
-    create_claim_token,
     claim_device,
+    create_claim_token,
     validate_claim_token,
 )
-from app.models.device import Device
 
 
 router = APIRouter(
@@ -20,8 +21,23 @@ router = APIRouter(
 
 
 # ============================================================
+# SCHEMAS
+# ============================================================
+
+
+class ValidateTokenSchema(BaseModel):
+    token: str
+
+
+class ClaimDeviceSchema(BaseModel):
+    token: str
+    home_id: str
+
+
+# ============================================================
 # CREATE CLAIM TOKEN
 # ============================================================
+
 
 @router.post("/devices/{device_id}/token")
 def create_device_claim_token(
@@ -30,10 +46,10 @@ def create_device_claim_token(
     current_user: User = Depends(get_current_user),
 ):
     """
-    Generate a one-time claim token for a device.
+    Generate a secure one-time claim token for a device.
 
-    The token is returned only once and its hash is stored
-    in the database.
+    The raw token is returned only once.
+    Only its SHA-256 hash is stored in the database.
     """
 
     device = (
@@ -52,6 +68,12 @@ def create_device_claim_token(
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="Device is already claimed",
+        )
+
+    if device.lifecycle_status != "ACTIVE":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Device is not available for claiming",
         )
 
     try:
@@ -84,20 +106,24 @@ def create_device_claim_token(
 # VALIDATE CLAIM TOKEN
 # ============================================================
 
+
 @router.post("/validate")
 def validate_device_claim_token(
-    token: str,
+    payload: ValidateTokenSchema,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     """
-    Check whether a device claim token is valid.
+    Validate a device claim token.
+
+    This does not consume the token.
+    The token becomes unusable only after successful claiming.
     """
 
     try:
         claim_token = validate_claim_token(
             db=db,
-            token=token,
+            token=payload.token,
         )
 
     except ValueError as e:
@@ -123,6 +149,8 @@ def validate_device_claim_token(
         "device_id": device.device_id,
         "device_name": device.device_name,
         "device_type": device.device_type,
+        "claim_status": device.claim_status,
+        "lifecycle_status": device.lifecycle_status,
         "expires_at": claim_token.expires_at,
     }
 
@@ -131,15 +159,19 @@ def validate_device_claim_token(
 # CLAIM DEVICE
 # ============================================================
 
+
 @router.post("/claim")
 def claim_device_endpoint(
-    token: str,
-    home_id: str,
+    payload: ClaimDeviceSchema,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     """
-    Claim a device and attach it to a home.
+    Claim a device using a valid one-time token
+    and attach it to a home.
+
+    Only OWNER and ADMIN users of the target home
+    are allowed to claim a device.
     """
 
     # --------------------------------------------------------
@@ -149,7 +181,7 @@ def claim_device_endpoint(
     verify_home_access(
         db=db,
         user_id=current_user.id,
-        home_id=home_id,
+        home_id=payload.home_id,
         required_roles=["OWNER", "ADMIN"],
     )
 
@@ -160,8 +192,8 @@ def claim_device_endpoint(
     try:
         claim = claim_device(
             db=db,
-            token=token,
-            home_id=home_id,
+            token=payload.token,
+            home_id=payload.home_id,
             user_id=current_user.id,
         )
 

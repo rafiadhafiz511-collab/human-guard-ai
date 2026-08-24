@@ -131,9 +131,9 @@ def claim_device(
     )
 
     device = (
-        db.query(Device)
-        .filter(Device.id == claim_token.device_id)
-        .first()
+    db.query(Device)
+    .filter(Device.id == claim_token.device_id)
+    .first()
     )
 
     if not device:
