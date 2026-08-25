@@ -1,4 +1,9 @@
-import { useState, type FormEvent } from "react";
+import {
+  useEffect,
+  useState,
+  type FormEvent,
+} from "react";
+
 import api from "../api/client";
 
 interface AddDeviceModalProps {
@@ -7,24 +12,86 @@ interface AddDeviceModalProps {
   onDeviceAdded: () => void;
 }
 
+type DeviceTypeOption =
+  | "SMART_DEVICE"
+  | "PUMP"
+  | "SMART_PUMP"
+  | "LIGHT"
+  | "CAMERA"
+  | "FAN";
+
 export default function AddDeviceModal({
   isOpen,
   onClose,
   onDeviceAdded,
 }: AddDeviceModalProps) {
-  const [deviceName, setDeviceName] = useState("");
-  const [deviceId, setDeviceId] = useState("");
-  const [deviceType, setDeviceType] = useState("SMART_DEVICE");
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
+  const [deviceName, setDeviceName] =
+    useState("");
 
-  if (!isOpen) return null;
+  const [deviceId, setDeviceId] =
+    useState("");
 
-  async function handleSubmit(e: FormEvent) {
-    e.preventDefault();
+  const [deviceType, setDeviceType] =
+    useState<DeviceTypeOption>(
+      "SMART_DEVICE"
+    );
 
-    if (!deviceName.trim() || !deviceId.trim()) {
-      setError("Device name and Device ID are required.");
+  const [loading, setLoading] =
+    useState(false);
+
+  const [error, setError] =
+    useState("");
+
+  // ============================================================
+  // RESET FORM
+  // ============================================================
+
+  useEffect(() => {
+    if (!isOpen) {
+      setError("");
+      setLoading(false);
+    }
+  }, [isOpen]);
+
+  // ============================================================
+  // CLOSE
+  // ============================================================
+
+  function handleClose() {
+    if (loading) {
+      return;
+    }
+
+    setError("");
+    onClose();
+  }
+
+  // ============================================================
+  // SUBMIT
+  // ============================================================
+
+  async function handleSubmit(
+    event: FormEvent<HTMLFormElement>
+  ) {
+    event.preventDefault();
+
+    const trimmedName =
+      deviceName.trim();
+
+    const trimmedDeviceId =
+      deviceId.trim();
+
+    if (!trimmedName) {
+      setError(
+        "Device name is required."
+      );
+      return;
+    }
+
+    if (!trimmedDeviceId) {
+      setError(
+        "Device ID is required."
+      );
       return;
     }
 
@@ -32,125 +99,272 @@ export default function AddDeviceModal({
     setError("");
 
     try {
-      const response = await api.post("/devices/register", {
-        device_id: deviceId.trim(),
-        device_name: deviceName.trim(),
-        device_type: deviceType,
-      });
+      const response =
+        await api.post(
+          "/devices/register",
+          {
+            device_id: trimmedDeviceId,
+            device_name: trimmedName,
+            device_type: deviceType,
+          }
+        );
 
-      console.log("[DEVICE] Registered:", response.data);
-
-      onDeviceAdded();
+      console.log(
+        "[DEVICE] Registered successfully:",
+        response.data
+      );
 
       setDeviceName("");
       setDeviceId("");
-      setDeviceType("SMART_DEVICE");
+      setDeviceType(
+        "SMART_DEVICE"
+      );
 
+      onDeviceAdded();
       onClose();
-    } catch (error: any) {
-      console.error("[DEVICE] Registration failed:", error);
+    } catch (error: unknown) {
+      console.error(
+        "[DEVICE] Registration failed:",
+        error
+      );
 
-      const message =
-        error?.response?.data?.detail ||
-        "Failed to register device. Please try again.";
+      const axiosError =
+        error as {
+          response?: {
+            data?: {
+              detail?: string;
+              message?: string;
+            };
+          };
+        };
 
-      setError(message);
+      const serverMessage =
+        axiosError.response?.data
+          ?.detail ||
+        axiosError.response?.data
+          ?.message;
+
+      setError(
+        serverMessage ||
+          "Failed to register device. Please try again."
+      );
     } finally {
       setLoading(false);
     }
   }
 
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
-      <div className="w-full max-w-md rounded-2xl border border-white/10 bg-slate-900 p-6 shadow-2xl">
-        <div className="mb-5">
-          <h2 className="text-xl font-bold !text-white">
-            Add New Device
-          </h2>
+  if (!isOpen) {
+    return null;
+  }
 
-          <p className="mt-1 text-xs !text-slate-400">
-            Register a new IoT device with Human Tech.
-          </p>
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur-md"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="add-device-title"
+      onMouseDown={(event) => {
+        if (
+          event.target === event.currentTarget
+        ) {
+          handleClose();
+        }
+      }}
+    >
+      <div className="w-full max-w-md overflow-hidden rounded-3xl border border-white/10 bg-slate-900 shadow-2xl">
+
+        {/* ==================================================== */}
+        {/* HEADER */}
+        {/* ==================================================== */}
+
+        <div className="border-b border-white/10 px-6 py-5">
+
+          <div className="flex items-start justify-between gap-4">
+
+            <div>
+              <h2
+                id="add-device-title"
+                className="text-xl font-black text-white"
+              >
+                Add New Device
+              </h2>
+
+              <p className="mt-1 text-xs text-slate-400">
+                Register a Human Tech IoT device.
+              </p>
+            </div>
+
+            <button
+              type="button"
+              onClick={handleClose}
+              disabled={loading}
+              aria-label="Close dialog"
+              className="rounded-xl p-2 text-slate-400 transition hover:bg-white/5 hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              ✕
+            </button>
+
+          </div>
+
         </div>
 
-        <form onSubmit={handleSubmit} className="space-y-4">
+        {/* ==================================================== */}
+        {/* FORM */}
+        {/* ==================================================== */}
+
+        <form
+          onSubmit={handleSubmit}
+          className="space-y-5 p-6"
+        >
+
           {/* DEVICE NAME */}
+
           <div>
-            <label className="block text-sm font-medium !text-slate-300">
+            <label
+              htmlFor="device-name"
+              className="block text-xs font-bold uppercase tracking-wider text-slate-300"
+            >
               Device Name
             </label>
 
             <input
+              id="device-name"
               type="text"
+              autoComplete="off"
               required
               value={deviceName}
-              onChange={(e) => setDeviceName(e.target.value)}
-              className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 !text-white outline-none placeholder:!text-slate-600 focus:border-cyan-400"
+              onChange={(event) =>
+                setDeviceName(
+                  event.target.value
+                )
+              }
+              disabled={loading}
               placeholder="Main Water Pump"
+              className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-3 text-sm text-white outline-none placeholder:text-slate-600 transition focus:border-cyan-400 disabled:cursor-not-allowed disabled:opacity-50"
             />
           </div>
 
           {/* DEVICE ID */}
+
           <div>
-            <label className="block text-sm font-medium !text-slate-300">
+            <label
+              htmlFor="device-id"
+              className="block text-xs font-bold uppercase tracking-wider text-slate-300"
+            >
               Device Unique ID
             </label>
 
             <input
+              id="device-id"
               type="text"
+              autoComplete="off"
               required
               value={deviceId}
-              onChange={(e) => setDeviceId(e.target.value)}
-              className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 font-mono !text-white outline-none placeholder:!text-slate-600 focus:border-cyan-400"
+              onChange={(event) =>
+                setDeviceId(
+                  event.target.value
+                )
+              }
+              disabled={loading}
               placeholder="HT-PUMP-005"
+              className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-3 font-mono text-sm text-white outline-none placeholder:text-slate-600 transition focus:border-cyan-400 disabled:cursor-not-allowed disabled:opacity-50"
             />
+
+            <p className="mt-1.5 text-[10px] text-slate-500">
+              Enter the unique ID programmed into the device.
+            </p>
           </div>
 
           {/* DEVICE TYPE */}
+
           <div>
-            <label className="block text-sm font-medium !text-slate-300">
+            <label
+              htmlFor="device-type"
+              className="block text-xs font-bold uppercase tracking-wider text-slate-300"
+            >
               Device Type
             </label>
 
             <select
+              id="device-type"
               value={deviceType}
-              onChange={(e) => setDeviceType(e.target.value)}
-              className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 !text-white outline-none focus:border-cyan-400"
+              onChange={(event) =>
+                setDeviceType(
+                  event.target
+                    .value as DeviceTypeOption
+                )
+              }
+              disabled={loading}
+              className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-3 text-sm text-white outline-none transition focus:border-cyan-400 disabled:cursor-not-allowed disabled:opacity-50"
             >
-              <option value="SMART_DEVICE">Smart Device</option>
-              <option value="PUMP">Pump</option>
-              <option value="LIGHT">Light</option>
-              <option value="CAMERA">Camera</option>
+              <option value="SMART_DEVICE">
+                Smart Device
+              </option>
+
+              <option value="PUMP">
+                Pump
+              </option>
+
+              <option value="SMART_PUMP">
+                Smart Pump
+              </option>
+
+              <option value="LIGHT">
+                Light
+              </option>
+
+              <option value="CAMERA">
+                Camera
+              </option>
+
+              <option value="FAN">
+                Fan
+              </option>
             </select>
           </div>
 
           {/* ERROR */}
+
           {error && (
-            <div className="rounded-lg border border-rose-500/20 bg-rose-500/10 px-3 py-2 text-xs !text-rose-300">
+            <div
+              role="alert"
+              className="rounded-xl border border-rose-500/20 bg-rose-500/10 px-4 py-3 text-xs text-rose-300"
+            >
               {error}
             </div>
           )}
 
           {/* ACTIONS */}
-          <div className="flex justify-end gap-3 pt-2">
+
+          <div className="flex justify-end gap-3 border-t border-white/5 pt-5">
+
             <button
               type="button"
-              onClick={onClose}
+              onClick={handleClose}
               disabled={loading}
-              className="rounded-lg bg-slate-700 px-4 py-2 font-medium !text-white transition hover:bg-slate-600 disabled:opacity-50"
+              className="rounded-xl border border-white/10 bg-white/5 px-4 py-2.5 text-xs font-bold text-white/70 transition hover:bg-white/10 hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
             >
               Cancel
             </button>
 
             <button
               type="submit"
-              disabled={loading}
-              className="rounded-lg bg-cyan-500 px-4 py-2 font-bold !text-slate-950 transition hover:bg-cyan-400 disabled:cursor-not-allowed disabled:opacity-50"
+              disabled={
+                loading ||
+                !deviceName.trim() ||
+                !deviceId.trim()
+              }
+              className="rounded-xl bg-cyan-400 px-5 py-2.5 text-xs font-black text-slate-950 transition hover:bg-cyan-300 disabled:cursor-not-allowed disabled:opacity-40"
             >
-              {loading ? "Registering..." : "Add Device"}
+              {loading
+                ? "Registering..."
+                : "Add Device"}
             </button>
+
           </div>
+
         </form>
+
       </div>
     </div>
   );

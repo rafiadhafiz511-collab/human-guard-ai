@@ -9,14 +9,19 @@ import type {
 // API BASE URL
 // ============================================================
 
-const getApiBaseUrl = (): string => {
-  return (
-    import.meta.env.VITE_API_URL ||
-    (import.meta.env.PROD
-      ? "/api/v1"
-      : "http://127.0.0.1:8000/api/v1")
-  );
-};
+function getApiBaseUrl(): string {
+  const configuredUrl = import.meta.env.VITE_API_URL?.trim();
+
+  if (configuredUrl) {
+    return configuredUrl.replace(/\/+$/, "");
+  }
+
+  if (import.meta.env.PROD) {
+    return "/api/v1";
+  }
+
+  return "http://127.0.0.1:8000/api/v1";
+}
 
 // ============================================================
 // API CLIENT
@@ -24,7 +29,7 @@ const getApiBaseUrl = (): string => {
 
 const api: AxiosInstance = axios.create({
   baseURL: getApiBaseUrl(),
-  timeout: 30000,
+  timeout: 30_000,
   headers: {
     "Content-Type": "application/json",
   },
@@ -46,7 +51,8 @@ api.interceptors.request.use(
     return config;
   },
   (error: AxiosError) => {
-    console.error("[API] Request error:", error);
+    console.error("[API] Request configuration failed:", error);
+
     return Promise.reject(error);
   }
 );
@@ -59,44 +65,28 @@ api.interceptors.response.use(
   (response) => response,
 
   (error: AxiosError) => {
-    // --------------------------------------------------------
-    // 401 UNAUTHORIZED
-    // --------------------------------------------------------
+    const status = error.response?.status;
 
-    if (error.response?.status === 401) {
+    if (status === 401) {
       localStorage.removeItem("access_token");
 
-      console.warn(
-        "[API] Unauthorized - token may have expired"
-      );
+      console.warn("[API] Unauthorized request.");
     }
 
-    // --------------------------------------------------------
-    // 403 FORBIDDEN
-    // --------------------------------------------------------
-
-    if (error.response?.status === 403) {
-      console.error("[API] Access forbidden");
+    if (status === 403) {
+      console.warn("[API] Forbidden request.");
     }
 
-    // --------------------------------------------------------
-    // 500 SERVER ERROR
-    // --------------------------------------------------------
-
-    if (error.response?.status === 500) {
+    if (status && status >= 500) {
       console.error(
         "[API] Server error:",
-        error.response.data
+        error.response?.data
       );
     }
-
-    // --------------------------------------------------------
-    // NETWORK ERROR
-    // --------------------------------------------------------
 
     if (!error.response) {
       console.error(
-        "[API] Network error - check backend connectivity"
+        "[API] Network error. Backend may be unavailable."
       );
     }
 

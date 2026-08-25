@@ -1,96 +1,381 @@
 // ============================================================
-// ১. ডিভাইস সংক্রান্ত টাইপ (Device & Hardware)
+// HUMAN TECH DASHBOARD
+// Shared Application Types
 // ============================================================
 
-export type DeviceType = "SMART_PUMP" | "PUMP" | "CAMERA" | "SENSOR" | "RELAY";
+// ============================================================
+// DEVICE
+// ============================================================
 
-export type DeviceState = "ON" | "OFF";
+export type DeviceType =
+  | "SMART_PUMP"
+  | "PUMP"
+  | "LIGHT"
+  | "CAMERA"
+  | "SENSOR"
+  | "RELAY"
+  | "FAN"
+  | "TV"
+  | "AC"
+  | "SMART_PLUG"
+  | "SMART_DEVICE"
+  | (string & {});
 
-// কেস-সেন্সিটিভিটি এরর এড়াতে স্মল ও ক্যাপিটাল উভয় কেস রাখা হয়েছে
-export type DeviceStatus = "online" | "offline" | "ONLINE" | "OFFLINE";
+export type DeviceState =
+  | "ON"
+  | "OFF"
+  | "UNKNOWN";
+
+export type DeviceStatus =
+  | "ONLINE"
+  | "OFFLINE"
+  | "UNKNOWN";
 
 export interface Device {
-  id?: string;
+  id: string;
+
   device_id: string;
+
   device_name: string;
+
   device_type: DeviceType;
+
   status: DeviceStatus;
-  state?: DeviceState;
-  ip_address?: string;
-  mac_address?: string;
-  last_seen?: string;
-  created_at?: string;
+
+  state: DeviceState;
+
+  home_id?: string | null;
+
+  ip_address?: string | null;
+
+  mac_address?: string | null;
+
+  firmware_version?: string | null;
+
+  last_seen?: string | null;
+
+  created_at?: string | null;
+
+  // ----------------------------------------------------------
+  // COMMAND / AUTOMATION STATE
+  // ----------------------------------------------------------
+
+  pending_command?: string | null;
+
+  command_updated_at?: string | null;
+
+  is_auto?: boolean | null;
 }
 
 // ============================================================
-// ২. অটোমেশন রুল সংক্রান্ত টাইপ (Automation Rules)
+// DEVICE API RESPONSE
 // ============================================================
 
-export type SensorType = 
-  | "SOIL_MOISTURE" 
-  | "TEMPERATURE" 
-  | "HUMIDITY" 
-  | "WATER_LEVEL" 
-  | (string & {}); // Flexible String Intellisense
+export interface ApiDevice {
+  id: string;
 
-export type RuleOperator = "<" | ">" | "==" | "<=" | ">=" | "!=";
+  device_id: string;
 
-export type RuleAction = 
-  | "PUMP_ON" 
-  | "PUMP_OFF" 
-  | "LIGHT_ON" 
-  | "LIGHT_OFF" 
+  device_name: string;
+
+  device_type?: string | null;
+
+  status?: string | null;
+
+  state?: string | null;
+
+  home_id?: string | null;
+
+  ip_address?: string | null;
+
+  mac_address?: string | null;
+
+  firmware_version?: string | null;
+
+  last_seen?: string | null;
+
+  created_at?: string | null;
+
+  // ----------------------------------------------------------
+  // COMMAND / AUTOMATION STATE
+  // ----------------------------------------------------------
+
+  pending_command?: string | null;
+
+  command_updated_at?: string | null;
+
+  is_auto?: boolean | null;
+}
+
+// ============================================================
+// DEVICE REGISTRATION
+// ============================================================
+
+export interface RegisterDevicePayload {
+  device_id: string;
+
+  device_name: string;
+
+  device_type: string;
+}
+
+export interface RegisterDeviceResponse {
+  id?: string;
+
+  device_id: string;
+
+  device_name?: string;
+
+  device_type?: string;
+
+  status?: string;
+
+  state?: string;
+
+  home_id?: string | null;
+
+  message?: string;
+}
+
+// ============================================================
+// DEVICE COMMANDS
+// ============================================================
+
+export type DeviceCommand =
+  | "POWER_ON"
+  | "POWER_OFF"
+  | "PUMP_ON"
+  | "PUMP_OFF"
+  | "LIGHT_ON"
+  | "LIGHT_OFF"
+  | "FAN_ON"
+  | "FAN_OFF"
+  | "TV_ON"
+  | "TV_OFF"
+  | "AC_ON"
+  | "AC_OFF"
+  | "SMART_PLUG_ON"
+  | "SMART_PLUG_OFF"
+  | (string & {});
+
+export interface DeviceCommandPayload {
+  command: DeviceCommand;
+}
+
+export interface DeviceCommandResponse {
+  success?: boolean;
+
+  message?: string;
+
+  command?: string;
+
+  status?: string;
+
+  device_id?: string;
+}
+
+// ============================================================
+// COMMAND ACTIVITY
+// ============================================================
+
+export interface CommandActivityStats {
+  pending: number;
+
+  completed: number;
+
+  failed: number;
+
+  total: number;
+
+  // Allows future backend command states
+  // without breaking the frontend type system.
+  [key: string]: number;
+}
+
+// ============================================================
+// AUTOMATION RULES
+// ============================================================
+
+export type SensorType =
+  | "SOIL_MOISTURE"
+  | "TEMPERATURE"
+  | "HUMIDITY"
+  | "WATER_LEVEL"
+  | (string & {});
+
+export type RuleOperator =
+  | "<"
+  | ">"
+  | "=="
+  | "<="
+  | ">="
+  | "!=";
+
+export type RuleAction =
+  | "PUMP_ON"
+  | "PUMP_OFF"
+  | "LIGHT_ON"
+  | "LIGHT_OFF"
   | (string & {});
 
 export interface AutomationRule {
   id: string;
+
   rule_name: string;
+
   sensor_type: SensorType;
+
   threshold: number;
+
   operator: RuleOperator;
+
   target_device_id: string;
+
   action: RuleAction;
+
   is_active: boolean;
-  created_at?: string;
+
+  created_at?: string | null;
 }
 
 // ============================================================
-// ৩. ডিটেকশন সংক্রান্ত টাইপ (Camera / AI Detections)
+// AI / CAMERA DETECTIONS
 // ============================================================
 
 export interface Detection {
   id: string;
-  device_id?: string;
+
+  device_id?: string | null;
+
   label: string;
+
   confidence: number;
-  image_url?: string;
-  snapshot?: string; // বিকল্প ফিল্ড (Base64 বা Image path-এর জন্য)
+
+  // ----------------------------------------------------------
+  // IMAGE / SNAPSHOT
+  // ----------------------------------------------------------
+
+  image_url?: string | null;
+
+  image_path?: string | null;
+
+  snapshot?: string | null;
+
+  // ----------------------------------------------------------
+  // AI DETECTION FLAGS
+  // ----------------------------------------------------------
+
+  person?: boolean | null;
+
+  alarm?: boolean | null;
+
+  // ----------------------------------------------------------
+  // TIMESTAMPS
+  // ----------------------------------------------------------
+
   detected_at: string;
-  created_at?: string;
+
+  created_at?: string | null;
 }
 
 // ============================================================
-// ৪. ইউজার ও অথেনটিকেশন টাইপ (User & Auth Profile)
+// USER / AUTH
 // ============================================================
 
-export type UserRole = "ADMIN" | "USER" | "OPERATOR" | string;
+export type UserRole =
+  | "ADMIN"
+  | "USER"
+  | "OPERATOR"
+  | (string & {});
 
 export interface UserProfile {
   id: string;
+
   email: string;
-  full_name?: string;
+
+  full_name?: string | null;
+
   role?: UserRole;
-  fcm_token?: string; // নোটিফিকেশনের জন্য
-  created_at?: string;
+
+  fcm_token?: string | null;
+
+  created_at?: string | null;
 }
 
 // ============================================================
-// ৫. সকেট ও টেলিমোট্রি পেলোড (Live MQTT / WS Payloads)
+// TELEMETRY
 // ============================================================
 
 export interface TelemetryPayload {
   device_id: string;
+
   state?: DeviceState;
-  data: Record<string, number | string | boolean>;
+
+  data: Record<
+    string,
+    number | string | boolean | null
+  >;
+
   timestamp: string;
+}
+
+// ============================================================
+// DASHBOARD
+// ============================================================
+
+// ============================================================
+// DASHBOARD
+// ============================================================
+
+export interface DashboardDeviceStats {
+  total: number;
+  online: number;
+  offline: number;
+}
+
+export interface DashboardCommandStats {
+  total: number;
+  pending: number;
+  sent: number;
+  completed: number;
+  failed: number;
+  cancelled: number;
+}
+
+export interface DashboardLatestCommand {
+  id: string;
+  device_id: string;
+  command: string;
+  status: string;
+  created_at?: string | null;
+  sent_at?: string | null;
+  completed_at?: string | null;
+}
+
+export interface DashboardStats {
+  devices: DashboardDeviceStats;
+
+  commands: DashboardCommandStats;
+
+  latest_command: DashboardLatestCommand | null;
+
+  server_time: string;
+
+  offline_after_seconds: number;
+}
+
+// ============================================================
+// UI HELPERS
+// ============================================================
+
+export type AsyncStatus =
+  | "idle"
+  | "loading"
+  | "success"
+  | "error";
+
+export interface ApiErrorResponse {
+  detail?: string;
+
+  message?: string;
 }
