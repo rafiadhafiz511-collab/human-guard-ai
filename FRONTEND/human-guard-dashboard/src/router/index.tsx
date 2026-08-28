@@ -4,8 +4,10 @@ import {
 } from "react-router-dom";
 
 import MainLayout from "../layouts/MainLayout";
+
 import Dashboard from "../pages/Dashboard";
 import Devices from "../pages/Devices";
+import Rooms from "../pages/Rooms";
 import Schedules from "../pages/Schedules";
 import Activity from "../pages/Activity";
 import Settings from "../pages/Settings";
@@ -33,6 +35,10 @@ const router = createBrowserRouter([
           {
             path: "devices",
             element: <Devices />,
+          },
+          {
+            path: "rooms",
+            element: <Rooms />,
           },
           {
             path: "schedules",

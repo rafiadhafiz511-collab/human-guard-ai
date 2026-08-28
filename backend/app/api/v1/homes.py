@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, EmailStr
 from sqlalchemy.orm import Session
+from app.schemas.device import DeviceResponse
 
 from app.auth.dependencies import get_current_user
 from app.database.database import get_db
@@ -477,13 +478,21 @@ def get_home_devices(
         .all()
     )
 
+   
     return {
-        "success": True,
-        "home_id": home.id,
-        "home_name": home.name,
-        "device_count": len(devices),
-        "devices": devices,
-    }
+    "success": True,
+    "home_id": home.id,
+    "home_name": home.name,
+    "device_count": len(devices),
+    "devices": [
+        DeviceResponse.model_validate(device)
+        for device in devices
+    ],
+}
+
+
+
+
 
 
 # ============================================================

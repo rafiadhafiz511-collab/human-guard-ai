@@ -46,6 +46,8 @@ export interface Device {
 
   home_id?: string | null;
 
+  room_id?: string | null;
+
   ip_address?: string | null;
 
   mac_address?: string | null;
@@ -86,6 +88,8 @@ export interface ApiDevice {
 
   home_id?: string | null;
 
+  room_id?: string | null;
+
   ip_address?: string | null;
 
   mac_address?: string | null;
@@ -117,6 +121,8 @@ export interface RegisterDevicePayload {
   device_name: string;
 
   device_type: string;
+
+  room_id?: string | null;
 }
 
 export interface RegisterDeviceResponse {
@@ -133,6 +139,8 @@ export interface RegisterDeviceResponse {
   state?: string;
 
   home_id?: string | null;
+
+  room_id?: string | null;
 
   message?: string;
 }
@@ -323,10 +331,6 @@ export interface TelemetryPayload {
 // DASHBOARD
 // ============================================================
 
-// ============================================================
-// DASHBOARD
-// ============================================================
-
 export interface DashboardDeviceStats {
   total: number;
   online: number;
@@ -378,4 +382,102 @@ export interface ApiErrorResponse {
   detail?: string;
 
   message?: string;
+}
+
+// ============================================================
+// ROOMS
+// ============================================================
+
+export interface Room {
+  id: string;
+
+  home_id: string;
+
+  name: string;
+
+  created_at?: string | null;
+
+  updated_at?: string | null;
+}
+
+export interface CreateRoomPayload {
+  name: string;
+}
+
+export interface RoomCreatePayload {
+  name: string;
+}
+
+export interface UpdateRoomPayload {
+  name: string;
+}
+
+export interface RoomUpdatePayload {
+  name: string;
+}
+
+// ============================================================
+// ROOM DEVICES
+// ============================================================
+
+export interface RoomDevice extends Device {
+  room_id?: string | null;
+}
+
+export interface RoomDevicesResponse {
+  success: boolean;
+
+  home_id: string;
+
+  room_id: string;
+
+  room_name: string;
+
+  device_count: number;
+
+  devices: RoomDevice[];
+}
+
+// ============================================================
+// ROOM ACTIONS & RESPONSES
+// ============================================================
+
+export interface RoomActionResponse {
+  success: boolean;
+
+  message: string;
+
+  home_id: string;
+
+  room_id: string;
+
+  device_id?: string;
+
+  previous_room_id?: string | null;
+}
+
+export interface AssignDeviceToRoomResponse {
+  success: boolean;
+
+  message: string;
+
+  home_id: string;
+
+  room_id: string;
+
+  device_id: string;
+
+  previous_room_id?: string | null;
+}
+
+export interface RemoveDeviceFromRoomResponse {
+  success: boolean;
+
+  message: string;
+
+  home_id: string;
+
+  room_id: string;
+
+  device_id: string;
 }

@@ -1,3 +1,4 @@
+
 import api from "./client";
 
 import type { Device } from "../types";
@@ -17,7 +18,7 @@ export type DeviceCommand = {
 };
 
 // ============================================================
-// DEVICES
+// GET ALL DEVICES
 // ============================================================
 
 export async function getDevices(): Promise<Device[]> {
@@ -30,6 +31,24 @@ export async function getDevices(): Promise<Device[]> {
       : [];
 
   return data;
+}
+
+// ============================================================
+// GET DEVICES FOR A HOME
+// ============================================================
+
+export async function getHomeDevices(
+  homeId: string
+): Promise<Device[]> {
+  const response = await api.get(
+    `/homes/${encodeURIComponent(homeId)}/devices`
+  );
+
+  const data = response.data?.devices;
+
+  return Array.isArray(data)
+    ? data
+    : [];
 }
 
 // ============================================================
@@ -73,3 +92,4 @@ export async function getAllDeviceCommands(
         new Date(a.created_at).getTime()
     );
 }
+

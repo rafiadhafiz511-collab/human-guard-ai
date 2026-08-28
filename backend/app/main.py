@@ -8,17 +8,18 @@ from fastapi.staticfiles import StaticFiles
 # API ROUTERS
 # ============================================================
 
-from app.api.v1.detect import router as detect_router
-from app.api.v1.devices import router as device_router
-from app.api.v1.detections import router as detections_router
-from app.api.v1.dashboard import router as dashboard_router
 from app.api.v1.automation import router as automation_router
-from app.api.v1.schedules import router as schedules_router
-from app.api.v1.homes import router as homes_router
-from app.api.v1.telemetry import router as telemetry_router
+from app.api.v1.dashboard import router as dashboard_router
+from app.api.v1.detect import router as detect_router
+from app.api.v1.detections import router as detections_router
 from app.api.v1.device_channels import router as device_channels_router
 from app.api.v1.device_claims import router as device_claims_router
+from app.api.v1.devices import router as device_router
 from app.api.v1.firmware import router as firmware_router
+from app.api.v1.homes import router as homes_router
+from app.api.v1.rooms import router as rooms_router
+from app.api.v1.schedules import router as schedules_router
+from app.api.v1.telemetry import router as telemetry_router
 from app.api.v1.websocket import router as websocket_router
 
 # ============================================================
@@ -50,12 +51,12 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-   allow_origins=[
-    "http://localhost:5173",
-    "http://127.0.0.1:5173",
-    "http://localhost:3000",
-    "http://127.0.0.1:3000",
-   ],
+    allow_origins=[
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -67,6 +68,7 @@ app.add_middleware(
 # ============================================================
 
 UPLOADS_DIR = Path(__file__).resolve().parent / "uploads"
+UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
 
 app.mount(
     "/uploads",
@@ -129,6 +131,7 @@ V1_ROUTERS = (
     automation_router,
     schedules_router,
     homes_router,
+    rooms_router,
     telemetry_router,
     device_channels_router,
     firmware_router,
