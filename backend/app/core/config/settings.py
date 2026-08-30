@@ -110,5 +110,28 @@ class Settings:
         )
     )
 
+    MQTT_TOPIC_TELEMETRY: str = os.getenv(
+        "MQTT_TOPIC_TELEMETRY",
+        "humantech/devices/+/telemetry",
+    )
+
+    MQTT_TOPIC_COMMAND: str = os.getenv(
+        "MQTT_TOPIC_COMMAND",
+        "humantech/devices/{device_id}/command",
+    )
+
+    # =========================
+    # Application URLs / CORS
+    # =========================
+
+    ALLOWED_ORIGINS: str = os.getenv(
+        "ALLOWED_ORIGINS",
+        "",
+    )
+
+    SERVER_BASE_URL: str | None = os.getenv(
+        "SERVER_BASE_URL"
+    )
+
 
 settings = Settings()

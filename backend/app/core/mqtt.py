@@ -40,8 +40,8 @@ MQTT_BROKER_HOST = settings.MQTT_BROKER_HOST
 MQTT_BROKER_PORT = settings.MQTT_BROKER_PORT
 MQTT_KEEPALIVE = settings.MQTT_KEEPALIVE
 
-MQTT_TOPIC_TELEMETRY = "humantech/devices/+/telemetry"
-MQTT_TOPIC_COMMAND = "humantech/devices/{device_id}/command"
+MQTT_TOPIC_TELEMETRY = settings.MQTT_TOPIC_TELEMETRY
+MQTT_TOPIC_COMMAND = settings.MQTT_TOPIC_COMMAND
 
 
 # ============================================================
