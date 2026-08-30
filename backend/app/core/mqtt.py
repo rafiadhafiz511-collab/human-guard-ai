@@ -9,6 +9,7 @@ import paho.mqtt.client as mqtt
 from sqlalchemy.orm import Session
 
 from app.database.database import SessionLocal
+from app.core.config.settings import settings
 from app.models.device import Device
 from app.core.websocket_manager import manager
 
@@ -35,9 +36,9 @@ def set_main_event_loop(loop: asyncio.AbstractEventLoop) -> None:
 # MQTT CONFIGURATION
 # ============================================================
 
-MQTT_BROKER_HOST = "broker.hivemq.com"
-MQTT_BROKER_PORT = 1883
-MQTT_KEEPALIVE = 60
+MQTT_BROKER_HOST = settings.MQTT_BROKER_HOST
+MQTT_BROKER_PORT = settings.MQTT_BROKER_PORT
+MQTT_KEEPALIVE = settings.MQTT_KEEPALIVE
 
 MQTT_TOPIC_TELEMETRY = "humantech/devices/+/telemetry"
 MQTT_TOPIC_COMMAND = "humantech/devices/{device_id}/command"
