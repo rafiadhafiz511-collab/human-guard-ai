@@ -3,10 +3,18 @@ from typing import Any, Optional
 
 from sqlalchemy.orm import Session
 
+from app.core.mqtt import publish_device_command
 from app.models.device import Device
 from app.models.device_command import DeviceCommand
-from app.services.command_service import handle_command_timeout, mark_command_sent
+from app.services.command_service import (
+    handle_command_timeout,
+    mark_command_sent,
+)
 
+
+# ============================================================
+# GET PENDING COMMAND
+# ============================================================
 
 def get_pending_command(
     db: Session,
@@ -14,10 +22,25 @@ def get_pending_command(
 ) -> Optional[DeviceCommand]:
     """
     Get the next pending command for a device.
+
+    Command lifecycle:
+
+        pending
+           ↓
+         sent
+           ↓
+     completed / failed
+
+    Before selecting a new pending command, existing sent
+    commands are checked for timeout.
+
+    If a sent command times out:
+        - retry is allowed -> pending
+        - maximum attempts reached -> failed
     """
 
     # --------------------------------------------------------
-    # 1. CHECK FOR TIMED OUT COMMANDS
+    # 1. CHECK SENT COMMANDS FOR TIMEOUT
     # --------------------------------------------------------
 
     sent_commands = (
@@ -42,15 +65,54 @@ def get_pending_command(
             DeviceCommand.device_id == device_id,
             DeviceCommand.status == "pending",
         )
-        .order_by(DeviceCommand.created_at.asc())
+        .order_by(
+            DeviceCommand.created_at.asc()
+        )
         .first()
     )
 
-    if pending_command:
-        mark_command_sent(pending_command)
-
     return pending_command
 
+
+# ============================================================
+# DELIVER PENDING COMMAND
+# ============================================================
+
+def deliver_pending_command(
+    db: Session,
+    device: Device,
+    command: DeviceCommand,
+) -> bool:
+    """
+    Publish a pending command to the physical device through MQTT.
+
+    Returns:
+        True  -> MQTT publish successful
+        False -> MQTT publish failed
+    """
+
+    payload = {
+        "id": command.id,
+        "command": command.command,
+        "attempt": command.attempt_count + 1,
+    }
+
+    published = publish_device_command(
+        device_id=device.device_id,
+        command_payload=payload,
+    )
+
+    if not published:
+        return False
+
+    mark_command_sent(command)
+
+    return True
+
+
+# ============================================================
+# PROCESS DEVICE HEARTBEAT
+# ============================================================
 
 def process_heartbeat(
     db: Session,
@@ -58,13 +120,15 @@ def process_heartbeat(
     telemetry: dict[str, Any],
 ) -> dict[str, Any]:
     """
-    Process device heartbeat and return response.
+    Process device heartbeat and prepare the response.
 
     Handles:
+
     - device online status
     - last seen timestamp
     - firmware version
-    - pending commands
+    - command delivery lifecycle
+    - command retry state
     - OTA information
     """
 
@@ -83,25 +147,36 @@ def process_heartbeat(
         "firmware_version"
     )
 
-    # Do not overwrite the database value with None.
+    # Never overwrite an existing firmware version with None.
     if reported_firmware_version:
         device.firmware_version = (
             reported_firmware_version
         )
 
     # ========================================================
-    # COMMAND
+    # COMMAND DELIVERY
     # ========================================================
 
-    command = get_pending_command(db, device.id)
+    command = get_pending_command(
+        db=db,
+        device_id=device.id,
+    )
 
     response_command = None
+
     if command:
-        response_command = {
-            "id": command.id,
-            "command": command.command,
-            "attempt": command.attempt_count,
-        }
+        delivered = deliver_pending_command(
+            db=db,
+            device=device,
+            command=command,
+        )
+
+        if delivered:
+            response_command = {
+                "id": command.id,
+                "command": command.command,
+                "attempt": command.attempt_count,
+            }
 
     # ========================================================
     # OTA INFORMATION

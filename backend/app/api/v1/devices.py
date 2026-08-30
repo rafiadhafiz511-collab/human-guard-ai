@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 
 from app.auth.dependencies import get_current_user
 from app.auth.permissions import require_admin, verify_home_access
+from app.core.mqtt import broadcast_to_home
 from app.core.security import authenticate_device
 from app.database.database import get_db
 from app.models.device import Device
@@ -526,6 +527,24 @@ def acknowledge_command(
         db.commit()
         db.refresh(command)
         db.refresh(device)
+
+        # ========================================================
+        # REALTIME WEBSOCKET EVENT
+        # ========================================================
+        if device.home_id:
+            broadcast_to_home(
+                home_id=device.home_id,
+                payload={
+                    "event": "command_completed",
+                    "device_id": device.device_id,
+                    "command_id": command.id,
+                    "command": command.command,
+                    "status": command.status,
+                    "device_state": getattr(device, "state", None),
+                    "completed_at": command.completed_at.isoformat() if command.completed_at else None,
+                },
+            )
+
     except Exception:
         db.rollback()
         raise HTTPException(
