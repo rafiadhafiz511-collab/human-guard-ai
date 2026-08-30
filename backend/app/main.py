@@ -1,9 +1,14 @@
-import os
 from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+
+# ============================================================
+# CONFIG & SETTINGS
+# ============================================================
+
+from app.core.config.settings import settings
 
 # ============================================================
 # API ROUTERS
@@ -41,7 +46,7 @@ from app.database.init_db import init_db
 # ============================================================
 
 app = FastAPI(
-    title="Human Guard AI",
+    title=settings.APP_NAME,
     version="1.0.0",
 )
 
@@ -51,8 +56,11 @@ app = FastAPI(
 # Allows Localhost + Vercel Production Deployments
 # ============================================================
 
-allowed_origins_env = os.getenv("ALLOWED_ORIGINS", "")
-allowed_origins_list = [origin.strip() for origin in allowed_origins_env.split(",") if origin.strip()]
+allowed_origins_list = [
+    origin.strip()
+    for origin in settings.ALLOWED_ORIGINS.split(",")
+    if origin.strip()
+]
 
 default_origins = [
     "http://localhost:5173",
@@ -65,7 +73,7 @@ origins = default_origins + allowed_origins_list
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"] if os.getenv("ENVIRONMENT") != "production" else origins,
+    allow_origins=["*"] if settings.ENVIRONMENT != "production" else origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -93,7 +101,7 @@ app.mount(
 @app.get("/")
 def root():
     return {
-        "message": "Human Guard AI Server is Running",
+        "message": f"{settings.APP_NAME} Server is Running",
         "version": "1.0.0",
     }
 
