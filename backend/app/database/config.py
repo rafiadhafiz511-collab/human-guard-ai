@@ -1,17 +1,13 @@
 from app.core.config.settings import settings
 
 
-ENVIRONMENT = settings.ENVIRONMENT
-DEBUG = settings.DEBUG
-
-
 def _build_database_url() -> str:
     # Explicit DATABASE_URL always takes priority.
     if settings.DATABASE_URL:
         return settings.DATABASE_URL
 
     # Production must use an explicit DATABASE_URL.
-    if ENVIRONMENT == "production":
+    if settings.ENVIRONMENT == "production":
         raise RuntimeError(
             "DATABASE_URL environment variable is required in production"
         )
