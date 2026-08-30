@@ -160,6 +160,7 @@ def get_home_rooms(
 ):
     """
     নির্দিষ্ট হোমের সকল রুমের তালিকা নিয়ে আসে।
+    প্রতিটি রুমের সাথে assigned device count-ও দেয়।
     """
     home = verify_home_access(
         home_id=home_id,
@@ -174,7 +175,29 @@ def get_home_rooms(
         .all()
     )
 
-    return rooms
+    result = []
+
+    for room in rooms:
+        device_count = (
+            db.query(Device)
+            .filter(
+                Device.home_id == home.id,
+                Device.room_id == room.id,
+            )
+            .count()
+        )
+
+        result.append(
+            {
+                "id": room.id,
+                "home_id": room.home_id,
+                "name": room.name,
+                "created_at": room.created_at,
+                "device_count": device_count,
+            }
+        )
+
+    return result
 
 
 # ============================================================
@@ -194,7 +217,7 @@ def get_room(
     """
     একটি নির্দিষ্ট রুমের ডিটেইলস নিয়ে আসে।
     """
-    verify_home_access(
+    home = verify_home_access(
         home_id=home_id,
         current_user=current_user,
         db=db,
@@ -204,7 +227,7 @@ def get_room(
         db.query(Room)
         .filter(
             Room.id == room_id,
-            Room.home_id == home_id,
+            Room.home_id == home.id,
         )
         .first()
     )
@@ -215,7 +238,22 @@ def get_room(
             detail="Room not found",
         )
 
-    return room
+    device_count = (
+        db.query(Device)
+        .filter(
+            Device.home_id == home.id,
+            Device.room_id == room.id,
+        )
+        .count()
+    )
+
+    return {
+        "id": room.id,
+        "home_id": room.home_id,
+        "name": room.name,
+        "created_at": room.created_at,
+        "device_count": device_count,
+    }
 
 
 # ============================================================
@@ -402,12 +440,7 @@ def get_room_devices(
     current_user: User = Depends(get_current_user),
 ):
     """
-    নির্দিষ্ট রুমে অ্যাসাইন থাকা সকল ডিভাইসের তালিকা নিয়ে আসে।
-
-    নিয়মাবলী:
-    - ইউজারকে অবশ্যই হোমের এক্সেস থাকতে হবে।
-    - রুমটি অবশ্যই উক্ত হোমের অন্তর্ভুক্ত হতে হবে।
-    - শুধুমাত্র এই রুমে অ্যাসাইন করা ডিভাইসগুলো রিটার্ন করবে।
+    নির্দিষ্ট রুমে অ্যাসাইন থাকা সকল ডিভাইসের তালিকা নিয়ে আসে।
     """
     # --------------------------------------------------------
     # HOME ACCESS
@@ -463,10 +496,10 @@ def get_room_devices(
                 "device_type": device.device_type,
                 "status": device.status,
                 "state": device.state,
-                "firmware_version": device.firmware_version,
-                "last_seen": device.last_seen,
                 "home_id": device.home_id,
                 "room_id": device.room_id,
+                "firmware_version": device.firmware_version,
+                "last_seen": device.last_seen,
             }
             for device in devices
         ],
@@ -489,7 +522,6 @@ def remove_device_from_room(
 ):
     """
     রুম থেকে ডিভাইস আন-অ্যাসাইন (Unassign) করে।
-    এটি ডিভাইস রিমুভ করে কিন্তু ডিলিট করে না (room_id = None করে দেয়)।
     """
     home = verify_home_access(
         home_id=home_id,

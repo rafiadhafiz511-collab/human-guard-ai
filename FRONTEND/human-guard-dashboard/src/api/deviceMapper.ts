@@ -1,3 +1,4 @@
+
 // ============================================================
 // HUMAN TECH DASHBOARD
 // Device API → UI Mapper
@@ -91,20 +92,51 @@ export function mapApiDevice(
       device.state
     ),
 
+    // ----------------------------------------------------------
+    // HOME / ROOM
+    // ----------------------------------------------------------
+
     home_id: device.home_id ?? null,
+
+    room_id: device.room_id ?? null,
+
+    // ----------------------------------------------------------
+    // NETWORK
+    // ----------------------------------------------------------
 
     ip_address: device.ip_address ?? null,
 
     mac_address: device.mac_address ?? null,
 
+    // ----------------------------------------------------------
+    // FIRMWARE
+    // ----------------------------------------------------------
+
     firmware_version:
       device.firmware_version ?? null,
+
+    // ----------------------------------------------------------
+    // TIMESTAMPS
+    // ----------------------------------------------------------
 
     last_seen:
       device.last_seen ?? null,
 
     created_at:
       device.created_at ?? null,
+
+    // ----------------------------------------------------------
+    // COMMAND / AUTOMATION STATE
+    // ----------------------------------------------------------
+
+    pending_command:
+      device.pending_command ?? null,
+
+    command_updated_at:
+      device.command_updated_at ?? null,
+
+    is_auto:
+      device.is_auto ?? null,
   };
 }
 
@@ -117,3 +149,4 @@ export function mapApiDevices(
 ): Device[] {
   return devices.map(mapApiDevice);
 }
+

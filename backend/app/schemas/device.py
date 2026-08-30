@@ -25,9 +25,12 @@ class DeviceResponse(BaseModel):
     status: str
     device_type: str
     state: str
+
     last_seen: datetime | None = None
     firmware_version: str
+
     home_id: str | None = None
+    room_id: str | None = None
 
     model_config = {
         "from_attributes": True

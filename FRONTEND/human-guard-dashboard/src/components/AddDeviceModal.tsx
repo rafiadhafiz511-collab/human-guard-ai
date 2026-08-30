@@ -1,3 +1,4 @@
+
 import {
   useEffect,
   useState,
@@ -5,6 +6,7 @@ import {
 } from "react";
 
 import api from "../api/client";
+import { useHomeContext } from "../contexts/HomeContext";
 
 interface AddDeviceModalProps {
   isOpen: boolean;
@@ -25,6 +27,9 @@ export default function AddDeviceModal({
   onClose,
   onDeviceAdded,
 }: AddDeviceModalProps) {
+  const { currentHomeId, currentHome } =
+    useHomeContext();
+
   const [deviceName, setDeviceName] =
     useState("");
 
@@ -95,11 +100,22 @@ export default function AddDeviceModal({
       return;
     }
 
+    if (!currentHomeId) {
+      setError(
+        "Please select a home before adding a device."
+      );
+      return;
+    }
+
     setLoading(true);
     setError("");
 
     try {
-      const response =
+      // --------------------------------------------------------
+      // STEP 1 — REGISTER DEVICE
+      // --------------------------------------------------------
+
+      const registerResponse =
         await api.post(
           "/devices/register",
           {
@@ -110,21 +126,44 @@ export default function AddDeviceModal({
         );
 
       console.log(
-        "[DEVICE] Registered successfully:",
-        response.data
+        "[DEVICE] Registration response:",
+        registerResponse.data
       );
+
+      // --------------------------------------------------------
+      // STEP 2 — ASSIGN DEVICE TO CURRENT HOME
+      // --------------------------------------------------------
+
+      await api.post(
+        `/homes/${encodeURIComponent(
+          currentHomeId
+        )}/devices/${encodeURIComponent(
+          trimmedDeviceId
+        )}`
+      );
+
+      console.log(
+  "[DEVICE] Assigned to home:",
+  currentHome?.name ?? currentHomeId
+);
+
+      // --------------------------------------------------------
+      // RESET
+      // --------------------------------------------------------
 
       setDeviceName("");
       setDeviceId("");
-      setDeviceType(
-        "SMART_DEVICE"
-      );
+      setDeviceType("SMART_DEVICE");
+
+      // --------------------------------------------------------
+      // REFRESH DEVICES PAGE
+      // --------------------------------------------------------
 
       onDeviceAdded();
       onClose();
     } catch (error: unknown) {
       console.error(
-        "[DEVICE] Registration failed:",
+        "[DEVICE] Add device failed:",
         error
       );
 
@@ -146,7 +185,7 @@ export default function AddDeviceModal({
 
       setError(
         serverMessage ||
-          "Failed to register device. Please try again."
+          "Failed to add device. Please try again."
       );
     } finally {
       setLoading(false);
@@ -165,7 +204,8 @@ export default function AddDeviceModal({
       aria-labelledby="add-device-title"
       onMouseDown={(event) => {
         if (
-          event.target === event.currentTarget
+          event.target ===
+          event.currentTarget
         ) {
           handleClose();
         }
@@ -173,12 +213,9 @@ export default function AddDeviceModal({
     >
       <div className="w-full max-w-md overflow-hidden rounded-3xl border border-white/10 bg-slate-900 shadow-2xl">
 
-        {/* ==================================================== */}
         {/* HEADER */}
-        {/* ==================================================== */}
 
         <div className="border-b border-white/10 px-6 py-5">
-
           <div className="flex items-start justify-between gap-4">
 
             <div>
@@ -192,6 +229,12 @@ export default function AddDeviceModal({
               <p className="mt-1 text-xs text-slate-400">
                 Register a Human Tech IoT device.
               </p>
+
+              {currentHome && (
+                <p className="mt-2 text-[10px] font-mono text-cyan-400">
+                  HOME: {currentHome.name}
+                </p>
+              )}
             </div>
 
             <button
@@ -205,12 +248,9 @@ export default function AddDeviceModal({
             </button>
 
           </div>
-
         </div>
 
-        {/* ==================================================== */}
         {/* FORM */}
-        {/* ==================================================== */}
 
         <form
           onSubmit={handleSubmit}
@@ -352,20 +392,20 @@ export default function AddDeviceModal({
               disabled={
                 loading ||
                 !deviceName.trim() ||
-                !deviceId.trim()
+                !deviceId.trim() ||
+                !currentHomeId
               }
               className="rounded-xl bg-cyan-400 px-5 py-2.5 text-xs font-black text-slate-950 transition hover:bg-cyan-300 disabled:cursor-not-allowed disabled:opacity-40"
             >
               {loading
-                ? "Registering..."
+                ? "Adding..."
                 : "Add Device"}
             </button>
 
           </div>
-
         </form>
-
       </div>
     </div>
   );
 }
+

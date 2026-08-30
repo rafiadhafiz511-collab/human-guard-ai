@@ -1,4 +1,6 @@
 
+from datetime import datetime, timezone
+
 from sqlalchemy.orm import Session
 
 from app.models.device import Device
@@ -254,14 +256,19 @@ def create_device_command(
     # --------------------------------------------------------
     # CREATE NEW COMMAND
     # --------------------------------------------------------
+    #
+    # created_at is explicitly assigned because the
+    # DeviceCommand model requires this field.
+    #
+    # --------------------------------------------------------
 
     device_command = DeviceCommand(
         device_id=device.id,
         command=command_name,
         status="pending",
+        created_at=datetime.now(timezone.utc),
     )
 
     db.add(device_command)
 
     return device_command
-

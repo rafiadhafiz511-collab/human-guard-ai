@@ -1,6 +1,14 @@
-import api from "./client";
+// ============================================================
+// HUMAN TECH DASHBOARD
+// Room API
+// ============================================================
 
-import type { DeviceStatus, DeviceState } from "../types";
+import api from "./client";
+import type {
+  DeviceState,
+  DeviceStatus,
+  DeviceType,
+} from "../types";
 
 // ============================================================
 // ROOM TYPES
@@ -22,13 +30,19 @@ export interface RoomDevice {
   id: string;
   device_id: string;
   device_name: string;
-  device_type: string;
+  device_type: DeviceType;
   status: DeviceStatus;
   state: DeviceState;
-  firmware_version?: string | null;
-  last_seen?: string | null;
   home_id?: string | null;
   room_id?: string | null;
+  ip_address?: string | null;
+  mac_address?: string | null;
+  firmware_version?: string | null;
+  last_seen?: string | null;
+  created_at?: string | null;
+  pending_command?: string | null;
+  command_updated_at?: string | null;
+  is_auto?: boolean | null;
 }
 
 // ============================================================
@@ -60,7 +74,6 @@ export async function createRoom(
     `/homes/${encodeURIComponent(homeId)}/rooms`,
     payload
   );
-
   return response.data;
 }
 
@@ -68,22 +81,12 @@ export async function createRoom(
 // GET HOME ROOMS
 // ============================================================
 
-export async function getHomeRooms(
-  homeId: string
-): Promise<Room[]> {
+export async function getHomeRooms(homeId: string): Promise<Room[]> {
   const response = await api.get<Room[]>(
     `/homes/${encodeURIComponent(homeId)}/rooms`
   );
-
-  return Array.isArray(response.data)
-    ? response.data
-    : [];
+  return Array.isArray(response.data) ? response.data : [];
 }
-
-// ============================================================
-// GET ROOMS
-// Backward-compatible alias
-// ============================================================
 
 export const getRooms = getHomeRooms;
 
@@ -98,7 +101,6 @@ export async function getRoom(
   const response = await api.get<Room>(
     `/homes/${encodeURIComponent(homeId)}/rooms/${encodeURIComponent(roomId)}`
   );
-
   return response.data;
 }
 
@@ -119,7 +121,6 @@ export async function updateRoom(
     `/homes/${encodeURIComponent(homeId)}/rooms/${encodeURIComponent(roomId)}`,
     payload
   );
-
   return response.data;
 }
 
@@ -141,7 +142,6 @@ export async function deleteRoom(
   const response = await api.delete<DeleteRoomResponse>(
     `/homes/${encodeURIComponent(homeId)}/rooms/${encodeURIComponent(roomId)}`
   );
-
   return response.data;
 }
 
@@ -164,9 +164,10 @@ export async function assignDeviceToRoom(
   deviceId: string
 ): Promise<AssignDeviceResponse> {
   const response = await api.post<AssignDeviceResponse>(
-    `/homes/${encodeURIComponent(homeId)}/rooms/${encodeURIComponent(roomId)}/devices/${encodeURIComponent(deviceId)}`
+    `/homes/${encodeURIComponent(homeId)}/rooms/${encodeURIComponent(
+      roomId
+    )}/devices/${encodeURIComponent(deviceId)}`
   );
-
   return response.data;
 }
 
@@ -187,11 +188,11 @@ export async function removeDeviceFromRoom(
   roomId: string,
   deviceId: string
 ): Promise<RemoveDeviceFromRoomResponse> {
-  const response =
-    await api.delete<RemoveDeviceFromRoomResponse>(
-      `/homes/${encodeURIComponent(homeId)}/rooms/${encodeURIComponent(roomId)}/devices/${encodeURIComponent(deviceId)}`
-    );
-
+  const response = await api.delete<RemoveDeviceFromRoomResponse>(
+    `/homes/${encodeURIComponent(homeId)}/rooms/${encodeURIComponent(
+      roomId
+    )}/devices/${encodeURIComponent(deviceId)}`
+  );
   return response.data;
 }
 
@@ -203,10 +204,10 @@ export async function getRoomDevices(
   homeId: string,
   roomId: string
 ): Promise<RoomDevicesResponse> {
-  const response =
-    await api.get<RoomDevicesResponse>(
-      `/homes/${encodeURIComponent(homeId)}/rooms/${encodeURIComponent(roomId)}/devices`
-    );
-
+  const response = await api.get<RoomDevicesResponse>(
+    `/homes/${encodeURIComponent(homeId)}/rooms/${encodeURIComponent(
+      roomId
+    )}/devices`
+  );
   return response.data;
 }
