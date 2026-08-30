@@ -4,10 +4,9 @@ from typing import Optional
 
 from sqlalchemy.orm import Session
 
+from app.core.config.settings import settings
 from app.models.device import Device
 from app.models.firmware import Firmware
-
-
 # ============================================================
 # OTA STATUS
 # ============================================================
@@ -157,7 +156,7 @@ def request_ota_update(
     download_path = firmware.download_url
     if download_path and not download_path.startswith("http"):
         filename = os.path.basename(download_path)
-        server_host = base_url or os.getenv("SERVER_BASE_URL", "http://127.0.0.1:8000")
+        server_host = base_url or settings.SERVER_BASE_URL or "http://127.0.0.1:8000"
         device.ota_firmware_url = f"{server_host.rstrip('/')}/uploads/firmware/{filename}"
     else:
         device.ota_firmware_url = download_path
