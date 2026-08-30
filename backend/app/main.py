@@ -1,3 +1,5 @@
+import asyncio
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI
@@ -9,6 +11,16 @@ from fastapi.staticfiles import StaticFiles
 # ============================================================
 
 from app.core.config.settings import settings
+
+# ============================================================
+# MQTT
+# ============================================================
+
+from app.core.mqtt import (
+    set_main_event_loop,
+    start_mqtt,
+    stop_mqtt,
+)
 
 # ============================================================
 # API ROUTERS
@@ -42,18 +54,55 @@ from app.database.init_db import init_db
 
 
 # ============================================================
+# APPLICATION LIFESPAN
+# ============================================================
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """
+    Application startup and shutdown lifecycle.
+
+    Startup:
+        1. Initialize database.
+        2. Register FastAPI's main event loop with MQTT.
+        3. Start MQTT background loop.
+
+    Shutdown:
+        1. Stop MQTT safely.
+    """
+
+    # --------------------------------------------------------
+    # STARTUP
+    # --------------------------------------------------------
+
+    init_db()
+
+    set_main_event_loop(asyncio.get_running_loop())
+
+    start_mqtt()
+
+    yield
+
+    # --------------------------------------------------------
+    # SHUTDOWN
+    # --------------------------------------------------------
+
+    stop_mqtt()
+
+
+# ============================================================
 # APPLICATION
 # ============================================================
 
 app = FastAPI(
     title=settings.APP_NAME,
     version="1.0.0",
+    lifespan=lifespan,
 )
 
 
 # ============================================================
-# DYNAMIC CORS CONFIGURATION
-# Allows Localhost + Vercel Production Deployments
+# CORS CONFIGURATION
 # ============================================================
 
 allowed_origins_list = [
@@ -69,11 +118,21 @@ default_origins = [
     "http://127.0.0.1:3000",
 ]
 
-origins = default_origins + allowed_origins_list
+# Remove duplicate origins while preserving order.
+origins = list(
+    dict.fromkeys(
+        default_origins + allowed_origins_list
+    )
+)
+
+if settings.ENVIRONMENT != "production":
+    cors_origins = ["*"]
+else:
+    cors_origins = origins
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"] if settings.ENVIRONMENT != "production" else origins,
+    allow_origins=cors_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -81,15 +140,23 @@ app.add_middleware(
 
 
 # ============================================================
-# STATIC FILES (UPLOADS & OTA FIRMWARE)
+# STATIC FILES
+# Uploads & OTA firmware
 # ============================================================
 
-UPLOADS_DIR = Path(__file__).resolve().parent / "uploads"
-UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
+UPLOADS_DIR = (
+    Path(__file__).resolve().parent / "uploads"
+)
+UPLOADS_DIR.mkdir(
+    parents=True,
+    exist_ok=True,
+)
 
 app.mount(
     "/uploads",
-    StaticFiles(directory=UPLOADS_DIR),
+    StaticFiles(
+        directory=UPLOADS_DIR,
+    ),
     name="uploads",
 )
 
@@ -161,15 +228,3 @@ for router in V1_ROUTERS:
         router,
         prefix="/api/v1",
     )
-
-
-# ============================================================
-# STARTUP
-# ============================================================
-
-@app.on_event("startup")
-def startup():
-    """
-    Initialize database models/schema on application startup.
-    """
-    init_db()
