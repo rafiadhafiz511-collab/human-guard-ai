@@ -1,30 +1,13 @@
-import os
 from datetime import datetime, timedelta, timezone
-from pathlib import Path
 
-from dotenv import load_dotenv
 from jose import jwt
 
-
-PROJECT_ROOT = Path(__file__).resolve().parents[3]
-ENV_FILE = PROJECT_ROOT / ".env"
-
-load_dotenv(dotenv_path=ENV_FILE)
+from app.core.config.settings import settings
 
 
-SECRET_KEY = os.getenv("JWT_SECRET_KEY")
-
-ALGORITHM = os.getenv(
-    "JWT_ALGORITHM",
-    "HS256",
-)
-
-ACCESS_TOKEN_EXPIRE_MINUTES = int(
-    os.getenv(
-        "ACCESS_TOKEN_EXPIRE_MINUTES",
-        "30",
-    )
-)
+SECRET_KEY = settings.JWT_SECRET_KEY
+ALGORITHM = settings.JWT_ALGORITHM
+ACCESS_TOKEN_EXPIRE_MINUTES = settings.ACCESS_TOKEN_EXPIRE_MINUTES
 
 
 if not SECRET_KEY:
@@ -33,22 +16,15 @@ if not SECRET_KEY:
     )
 
 
-def create_access_token(
-    data: dict,
-    expires_delta: timedelta | None = None,
-) -> str:
+def create_access_token(data: dict) -> str:
     to_encode = data.copy()
 
-    if expires_delta is None:
-        expires_delta = timedelta(
-            minutes=ACCESS_TOKEN_EXPIRE_MINUTES
-        )
-
-    expire = datetime.now(timezone.utc) + expires_delta
+    expire = datetime.now(timezone.utc) + timedelta(
+        minutes=ACCESS_TOKEN_EXPIRE_MINUTES
+    )
 
     to_encode.update(
         {
-            "iat": datetime.now(timezone.utc),
             "exp": expire,
         }
     )
