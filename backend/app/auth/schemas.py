@@ -6,9 +6,17 @@ class LoginRequest(BaseModel):
     password: str
 
 
+class UserResponse(BaseModel):
+    id: str
+    email: str
+    name: str
+    role: str
+
+
 class TokenResponse(BaseModel):
     access_token: str
     token_type: str
+    user: UserResponse | None = None
 
 
 class FirebaseLoginRequest(BaseModel):

@@ -62,13 +62,15 @@ def login(
 @router.post("/google-firebase", response_model=TokenResponse)
 def google_firebase_login(
     payload: FirebaseLoginRequest,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
 ):
     try:
-        # 1. Firebase Token Verification
-        decoded_token = firebase_auth.verify_id_token(payload.id_token)
+        # 1. Verify Firebase ID token
+        decoded_token = firebase_auth.verify_id_token(
+            payload.id_token
+        )
+
         email = decoded_token.get("email")
-        name = decoded_token.get("name", email.split("@")[0] if email else "User")
 
         if not email:
             raise HTTPException(
@@ -76,30 +78,44 @@ def google_firebase_login(
                 detail="Email not provided by Firebase token",
             )
 
-        # 2. Check or Create User in local database with Admin Role Check
-        user = db.query(User).filter(User.email == email).first()
+        name = decoded_token.get(
+            "name",
+            email.split("@")[0],
+        )
 
+        # 2. Find existing local user
+        user = (
+            db.query(User)
+            .filter(User.email == email)
+            .first()
+        )
+
+        # 3. Create local user if needed
         if not user:
             user = User(
                 email=email,
                 name=name,
-                role="admin" if email.lower() == "rafiadhafiz511@gmail.com" else "customer",
+                role="customer",
+                is_active=True,
             )
+
             db.add(user)
             db.commit()
             db.refresh(user)
-        else:
-            # Promote the designated Google account to system admin
-            if (
-                email.lower() == "rafiadhafiz511@gmail.com"
-                and getattr(user, "role", None) != "admin"
-            ):
-                user.role = "admin"
-                db.commit()
-                db.refresh(user)
 
-        # 3. Create Custom Backend Access Token using User ID
-        access_token = create_access_token({"sub": str(user.id)})
+        # 4. Block inactive users
+        if not user.is_active:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="User account is inactive",
+            )
+
+        # 5. Issue backend JWT
+        access_token = create_access_token(
+            {
+                "sub": str(user.id),
+            }
+        )
 
         return {
             "access_token": access_token,
@@ -112,16 +128,18 @@ def google_firebase_login(
             },
         }
 
+    except HTTPException:
+        raise
+
     except Exception as e:
         print("\n========== FIREBASE LOGIN ERROR ==========")
         print(f"ERROR TYPE: {type(e).__name__}")
         print(f"ERROR: {e}")
         traceback.print_exc()
-        print("==========================================\n")
 
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail=str(e),
+            detail="Firebase authentication failed",
         )
 
 

@@ -1,4 +1,3 @@
-
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from jose import JWTError, jwt
@@ -31,9 +30,9 @@ def get_current_user(
             algorithms=[ALGORITHM],
         )
 
-        sub = payload.get("sub")
+        user_id = payload.get("sub")
 
-        if not sub:
+        if not user_id:
             raise credentials_exception
 
     except JWTError:
@@ -41,10 +40,7 @@ def get_current_user(
 
     user = (
         db.query(User)
-        .filter(
-            (User.email == str(sub))
-            | (User.id == str(sub))
-        )
+        .filter(User.id == str(user_id))
         .first()
     )
 
@@ -52,4 +48,3 @@ def get_current_user(
         raise credentials_exception
 
     return user
-

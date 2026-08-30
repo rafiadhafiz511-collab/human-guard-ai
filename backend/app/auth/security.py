@@ -1,4 +1,3 @@
-
 import os
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -7,30 +6,11 @@ from dotenv import load_dotenv
 from jose import jwt
 
 
-# ============================================================
-# Environment Configuration
-# ============================================================
-
-# security.py
-#   app/
-#     auth/
-#       security.py
-#
-# Project root:
-#   human-guard-ai/
-#
-# Therefore:
-#   parents[3] = human-guard-ai/
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
-
 ENV_FILE = PROJECT_ROOT / ".env"
 
 load_dotenv(dotenv_path=ENV_FILE)
 
-
-# ============================================================
-# JWT Configuration
-# ============================================================
 
 SECRET_KEY = os.getenv("JWT_SECRET_KEY")
 
@@ -47,29 +27,28 @@ ACCESS_TOKEN_EXPIRE_MINUTES = int(
 )
 
 
-# ============================================================
-# Security Validation
-# ============================================================
-
 if not SECRET_KEY:
     raise RuntimeError(
         "JWT_SECRET_KEY environment variable is required"
     )
 
 
-# ============================================================
-# Access Token
-# ============================================================
-
-def create_access_token(data: dict) -> str:
+def create_access_token(
+    data: dict,
+    expires_delta: timedelta | None = None,
+) -> str:
     to_encode = data.copy()
 
-    expire = datetime.now(timezone.utc) + timedelta(
-        minutes=ACCESS_TOKEN_EXPIRE_MINUTES
-    )
+    if expires_delta is None:
+        expires_delta = timedelta(
+            minutes=ACCESS_TOKEN_EXPIRE_MINUTES
+        )
+
+    expire = datetime.now(timezone.utc) + expires_delta
 
     to_encode.update(
         {
+            "iat": datetime.now(timezone.utc),
             "exp": expire,
         }
     )

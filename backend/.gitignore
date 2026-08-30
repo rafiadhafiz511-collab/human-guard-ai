@@ -16,3 +16,12 @@ firebase-credentials.json
 .env
 .env.local
 .env.*.local
+
+# ============================================================
+# FIREBASE / GOOGLE CREDENTIALS
+# ============================================================
+
+firebase-credentials.json
+**/firebase-credentials.json
+service-account*.json
+**/service-account*.json
