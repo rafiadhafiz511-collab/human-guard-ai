@@ -7,6 +7,7 @@ import type {
 
 // ============================================================
 // API BASE URL
+// Dynamic resolution for Production (Vercel) & Local
 // ============================================================
 
 function getApiBaseUrl(): string {
@@ -52,7 +53,6 @@ api.interceptors.request.use(
   },
   (error: AxiosError) => {
     console.error("[API] Request configuration failed:", error);
-
     return Promise.reject(error);
   }
 );
@@ -63,13 +63,11 @@ api.interceptors.request.use(
 
 api.interceptors.response.use(
   (response) => response,
-
   (error: AxiosError) => {
     const status = error.response?.status;
 
     if (status === 401) {
       localStorage.removeItem("access_token");
-
       console.warn("[API] Unauthorized request.");
     }
 
@@ -78,16 +76,11 @@ api.interceptors.response.use(
     }
 
     if (status && status >= 500) {
-      console.error(
-        "[API] Server error:",
-        error.response?.data
-      );
+      console.error("[API] Server error:", error.response?.data);
     }
 
     if (!error.response) {
-      console.error(
-        "[API] Network error. Backend may be unavailable."
-      );
+      console.error("[API] Network error. Backend may be unavailable.");
     }
 
     return Promise.reject(error);
