@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 from app.core.config.settings import settings
 from app.models.device import Device
 from app.models.firmware import Firmware
+
 # ============================================================
 # OTA STATUS
 # ============================================================
@@ -152,14 +153,45 @@ def request_ota_update(
 
     device.ota_target_version = normalize_version(firmware.version)
 
-    # Dynamic Public URL Conversion (Avoids local D:\ paths)
+    # Dynamic Public URL Conversion
     download_path = firmware.download_url
-    if download_path and not download_path.startswith("http"):
-        filename = os.path.basename(download_path)
-        server_host = base_url or settings.SERVER_BASE_URL or "http://127.0.0.1:8000"
-        device.ota_firmware_url = f"{server_host.rstrip('/')}/uploads/firmware/{filename}"
-    else:
+
+    if not download_path:
+        raise ValueError("Firmware download URL is missing")
+
+    if download_path.startswith(("http://", "https://")):
         device.ota_firmware_url = download_path
+    else:
+        filename = os.path.basename(download_path)
+
+        server_host = (
+            base_url
+            or settings.SERVER_BASE_URL
+        )
+
+        if not server_host:
+            raise ValueError(
+                "SERVER_BASE_URL is required for local firmware paths"
+            )
+
+        if settings.ENVIRONMENT == "production":
+            normalized_host = server_host.rstrip("/").lower()
+
+            if normalized_host.startswith(
+                ("http://127.0.0.1", "http://localhost")
+            ):
+                raise ValueError(
+                    "Production OTA URL cannot use localhost"
+                )
+
+            if not normalized_host.startswith("https://"):
+                raise ValueError(
+                    "Production OTA URL must use HTTPS"
+                )
+
+        device.ota_firmware_url = (
+            f"{server_host.rstrip('/')}/uploads/firmware/{filename}"
+        )
 
     device.ota_checksum = firmware.sha256
     device.ota_status = OTA_PENDING
