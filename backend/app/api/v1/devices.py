@@ -577,6 +577,20 @@ def get_device_commands(
 
     device = get_device_or_404(device_id, db)
 
+    if current_user.role != "admin":
+        if not device.home_id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Device is not assigned to a home",
+            )
+
+        verify_home_access(
+            db=db,
+            user_id=current_user.id,
+            home_id=device.home_id,
+            required_roles=["OWNER", "ADMIN", "MEMBER"],
+        )
+
     commands = (
         db.query(DeviceCommandModel)
         .filter(DeviceCommandModel.device_id == device.id)
