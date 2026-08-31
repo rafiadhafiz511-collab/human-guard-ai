@@ -13,6 +13,8 @@ from app.models.device import Device
 from app.models.device_channel import DeviceChannel
 from app.models.device_command import DeviceCommand as DeviceCommandModel
 from app.models.firmware import Firmware
+from app.models.home import Home
+from app.models.home_member import HomeMember
 from app.models.user import User
 from app.schemas.device import (
     CommandAckRequest,
@@ -222,14 +224,42 @@ def get_devices(
     current_user: User = Depends(get_current_user),
 ):
     """
-    Get all registered devices.
+    Get all registered devices accessible by the current user.
+    Admins retrieve all devices. Non-admins retrieve devices from homes they own or belong to.
     """
 
-    devices = (
-        db.query(Device)
-        .order_by(Device.device_id.asc())
-        .all()
-    )
+    if current_user.role == "admin":
+        devices = (
+            db.query(Device)
+            .order_by(Device.device_id.asc())
+            .all()
+        )
+    else:
+        accessible_home_ids = (
+            db.query(Home.id)
+            .outerjoin(
+                HomeMember,
+                HomeMember.home_id == Home.id,
+            )
+            .filter(
+                (Home.owner_id == current_user.id)
+                | (HomeMember.user_id == current_user.id)
+            )
+            .distinct()
+            .all()
+        )
+
+        home_ids = [home_id for (home_id,) in accessible_home_ids]
+
+        if home_ids:
+            devices = (
+                db.query(Device)
+                .filter(Device.home_id.in_(home_ids))
+                .order_by(Device.device_id.asc())
+                .all()
+            )
+        else:
+            devices = []
 
     now = datetime.now(timezone.utc)
     offline_time = now - timedelta(seconds=60)
