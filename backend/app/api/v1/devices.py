@@ -327,10 +327,24 @@ def update_device(
     current_user: User = Depends(get_current_user),
 ):
     """
-    Update device information.
+    Update device information with home access verification for non-admins.
     """
 
     device = get_device_or_404(device_id, db)
+
+    if current_user.role != "admin":
+        if not device.home_id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Device is not assigned to a home",
+            )
+
+        verify_home_access(
+            db=db,
+            user_id=current_user.id,
+            home_id=device.home_id,
+            required_roles=["OWNER", "ADMIN", "MEMBER"],
+        )
 
     if data.device_name is not None:
         device.device_name = data.device_name
