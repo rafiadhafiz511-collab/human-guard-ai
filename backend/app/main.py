@@ -23,6 +23,15 @@ from app.core.mqtt import (
 )
 
 # ============================================================
+# SCHEDULER
+# ============================================================
+
+from app.core.scheduler import (
+    shutdown_scheduler,
+    start_scheduler,
+)
+
+# ============================================================
 # API ROUTERS
 # ============================================================
 
@@ -66,9 +75,11 @@ async def lifespan(app: FastAPI):
         1. Initialize database.
         2. Register FastAPI's main event loop with MQTT.
         3. Start MQTT background loop.
+        4. Start background scheduler.
 
     Shutdown:
         1. Stop MQTT safely.
+        2. Shutdown background scheduler.
     """
 
     # --------------------------------------------------------
@@ -80,6 +91,7 @@ async def lifespan(app: FastAPI):
     set_main_event_loop(asyncio.get_running_loop())
 
     start_mqtt()
+    start_scheduler()
 
     yield
 
@@ -88,6 +100,7 @@ async def lifespan(app: FastAPI):
     # --------------------------------------------------------
 
     stop_mqtt()
+    shutdown_scheduler()
 
 
 # ============================================================
