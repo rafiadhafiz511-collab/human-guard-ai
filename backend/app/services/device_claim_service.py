@@ -131,9 +131,9 @@ def claim_device(
     )
 
     device = (
-    db.query(Device)
-    .filter(Device.id == claim_token.device_id)
-    .first()
+        db.query(Device)
+        .filter(Device.id == claim_token.device_id)
+        .first()
     )
 
     if not device:
@@ -162,3 +162,47 @@ def claim_device(
     db.add(claim)
 
     return claim
+
+
+def unclaim_device(
+    db: Session,
+    device_id: str,
+) -> Device:
+    """
+    Unclaim a device and detach it from its current home.
+
+    The current successful claim is marked as revoked.
+    The device becomes available for claiming again.
+    """
+
+    device = (
+        db.query(Device)
+        .filter(Device.id == device_id)
+        .first()
+    )
+
+    if not device:
+        raise ValueError("Device not found")
+
+    if device.claim_status != "CLAIMED":
+        raise ValueError("Device is not currently claimed")
+
+    active_claim = (
+        db.query(DeviceClaim)
+        .filter(
+            DeviceClaim.device_id == device.id,
+            DeviceClaim.status == "SUCCESS",
+            DeviceClaim.revoked_at.is_(None),
+        )
+        .order_by(DeviceClaim.claimed_at.desc())
+        .first()
+    )
+
+    if active_claim:
+        active_claim.status = "REVOKED"
+        active_claim.revoked_at = datetime.utcnow()
+
+    device.home_id = None
+    device.claim_status = "UNCLAIMED"
+
+    return device

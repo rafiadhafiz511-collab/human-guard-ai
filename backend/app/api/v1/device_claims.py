@@ -10,6 +10,7 @@ from app.models.user import User
 from app.services.device_claim_service import (
     claim_device,
     create_claim_token,
+    unclaim_device,
     validate_claim_token,
 )
 
@@ -225,4 +226,105 @@ def claim_device_endpoint(
         "claim_method": claim.claim_method,
         "status": claim.status,
         "claimed_at": claim.claimed_at,
+    }
+
+
+# ============================================================
+# UNCLAIM DEVICE
+# ============================================================
+
+
+@router.post("/devices/{device_id}/unclaim")
+def unclaim_device_endpoint(
+    device_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Unclaim a device and detach it from its current home.
+
+    Administrators can unclaim any device.
+    OWNER and ADMIN members can unclaim devices
+    belonging to their home.
+    """
+
+    # --------------------------------------------------------
+    # GET DEVICE
+    # --------------------------------------------------------
+
+    device = (
+        db.query(Device)
+        .filter(Device.device_id == device_id)
+        .first()
+    )
+
+    if not device:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Device not found",
+        )
+
+    # --------------------------------------------------------
+    # CHECK CURRENT CLAIM
+    # --------------------------------------------------------
+
+    if device.claim_status != "CLAIMED":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Device is not currently claimed",
+        )
+
+    # --------------------------------------------------------
+    # VERIFY HOME ACCESS
+    # --------------------------------------------------------
+
+    if current_user.role != "admin":
+        if not device.home_id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Device is not assigned to a home",
+            )
+
+        verify_home_access(
+            db=db,
+            user_id=current_user.id,
+            home_id=device.home_id,
+            required_roles=["OWNER", "ADMIN"],
+        )
+
+    # --------------------------------------------------------
+    # UNCLAIM DEVICE
+    # --------------------------------------------------------
+
+    try:
+        device = unclaim_device(
+            db=db,
+            device_id=device.id,
+        )
+
+        db.commit()
+        db.refresh(device)
+
+    except ValueError as e:
+        db.rollback()
+
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e),
+        )
+
+    except Exception:
+        db.rollback()
+
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to unclaim device",
+        )
+
+    return {
+        "success": True,
+        "message": "Device unclaimed successfully",
+        "device_id": device.device_id,
+        "claim_status": device.claim_status,
+        "home_id": device.home_id,
     }
