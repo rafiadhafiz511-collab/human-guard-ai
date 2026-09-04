@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 from sqlalchemy.orm import Session
 
 from app.models.device import Device
+from app.models.device_channel import DeviceChannel
 from app.models.device_command import DeviceCommand
 
 
@@ -110,6 +111,7 @@ def is_channel_command(command: str) -> bool:
 # ============================================================
 
 def validate_device_command(
+    db: Session,
     device: Device,
     command: str,
 ) -> str:
@@ -136,6 +138,24 @@ def validate_device_command(
     # --------------------------------------------------------
 
     if is_channel_command(command_name):
+        parts = command_name.split(":")
+        channel_number = int(parts[1])
+
+        channel = (
+            db.query(DeviceChannel)
+            .filter(
+                DeviceChannel.device_id == device.id,
+                DeviceChannel.channel_number == channel_number,
+            )
+            .first()
+        )
+
+        if channel is None:
+            raise ValueError(
+                f"Channel {channel_number} does not exist "
+                f"for device '{device.device_id}'"
+            )
+
         return command_name
 
     # --------------------------------------------------------
@@ -240,6 +260,7 @@ def create_device_command(
     # --------------------------------------------------------
 
     command_name = validate_device_command(
+        db=db,
         device=device,
         command=command,
     )
