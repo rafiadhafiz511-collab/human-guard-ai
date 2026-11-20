@@ -1,0 +1,46 @@
+# Dependencies
+node_modules/
+npm-debug.log
+yarn-error.log
+
+# Git
+.git
+.gitignore
+.gitattributes
+
+# Development
+.env
+.env.local
+.env.*.local
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Build artifacts
+dist/
+build/
+
+# Documentation
+*.md
+docs/
+!README.md
+
+# CI/CD
+.github/
+.gitlab-ci.yml
+.travis.yml
+.circleci/
+
+# Testing
+.test/
+coverage/
+.nyc_output/
+
+# Misc
+.env.development
+.env.test
+docker-compose*.yml
+Dockerfile.dev

@@ -64,7 +64,7 @@ export default function DetectionTable({ detections }: Props) {
               </td>
 
               <td className="p-4 text-sm text-slate-600">
-                {new Date(detection.created_at).toLocaleString()}
+                new Date(detection.created_at || detection.detected_at || "")
               </td>
 
               <td className="p-4">
@@ -80,7 +80,7 @@ export default function DetectionTable({ detections }: Props) {
               </td>
 
               <td className="p-4">
-                {(detection.confidence * 100).toFixed(0)}%
+                ((detection.confidence ?? 0) * 100).toFixed(0)
               </td>
 
               <td className="p-4">

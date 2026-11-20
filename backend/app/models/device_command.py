@@ -5,6 +5,7 @@ from sqlalchemy import Column, String, DateTime, ForeignKey
 from sqlalchemy.orm import relationship
 
 from app.database.database import Base
+from sqlalchemy import Column, String, DateTime, ForeignKey, Integer
 
 
 class DeviceCommand(Base):
@@ -46,9 +47,20 @@ class DeviceCommand(Base):
         nullable=True,
     )
 
+    last_attempt_at = Column(
+    DateTime,
+    nullable=True,
+    )
+
     completed_at = Column(
         DateTime,
         nullable=True,
+    )
+
+    attempt_count = Column(
+    Integer,
+    nullable=False,
+    default=0,
     )
 
     device = relationship(

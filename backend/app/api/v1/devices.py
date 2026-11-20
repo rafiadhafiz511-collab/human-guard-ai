@@ -1,38 +1,34 @@
-
 import secrets
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.auth.dependencies import get_current_user
-from app.auth.permissions import require_admin
+from app.auth.permissions import require_admin, verify_home_access
 from app.core.security import authenticate_device
 from app.database.database import get_db
 from app.models.device import Device
+from app.models.device_channel import DeviceChannel
 from app.models.device_command import DeviceCommand as DeviceCommandModel
+from app.models.firmware import Firmware
 from app.models.user import User
 from app.schemas.device import (
     CommandAckRequest,
     DeviceCommandRequest,
     DeviceRegister,
+    DeviceResponse,
     DeviceUpdate,
     HeartbeatRequest,
 )
-
+from app.services.device_command_service import create_device_command
+from app.services.heartbeat_service import process_heartbeat
+from app.services.ota_service import request_ota_update
 
 router = APIRouter(
     prefix="/devices",
     tags=["Devices"],
 )
-
-
-ALLOWED_PUMP_COMMANDS = {
-    "PUMP_ON",
-    "PUMP_OFF",
-    "AUTO_MODE",
-    "MANUAL_MODE",
-}
 
 
 # ============================================================
@@ -58,6 +54,98 @@ def get_device_or_404(
         )
 
     return device
+
+
+# ============================================================
+# REQUEST OTA UPDATE
+# ============================================================
+
+@router.post("/{device_id}/ota")
+def request_device_ota(
+    device_id: str,
+    firmware_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin),
+):
+    """
+    Request an OTA firmware update for a device.
+
+    Only administrators can request firmware updates.
+    """
+
+    # --------------------------------------------------------
+    # GET DEVICE
+    # --------------------------------------------------------
+
+    device = get_device_or_404(
+        device_id,
+        db,
+    )
+
+    # --------------------------------------------------------
+    # GET FIRMWARE
+    # --------------------------------------------------------
+
+    firmware = (
+        db.query(Firmware)
+        .filter(
+            Firmware.id == firmware_id,
+            Firmware.is_active.is_(True),
+        )
+        .first()
+    )
+
+    if not firmware:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Firmware not found",
+        )
+
+    # --------------------------------------------------------
+    # REQUEST OTA
+    # --------------------------------------------------------
+
+    try:
+        request_ota_update(
+            db=db,
+            device=device,
+            firmware=firmware,
+        )
+
+        db.commit()
+        db.refresh(device)
+
+    except ValueError as e:
+
+        db.rollback()
+
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e),
+        )
+
+    except Exception:
+
+        db.rollback()
+
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to request OTA update",
+        )
+
+    # --------------------------------------------------------
+    # RESPONSE
+    # --------------------------------------------------------
+
+    return {
+        "success": True,
+        "device_id": device.device_id,
+        "ota_status": device.ota_status,
+        "target_version": device.ota_target_version,
+        "firmware_url": device.ota_firmware_url,
+        "checksum": device.ota_checksum,
+        "requested_at": device.ota_requested_at,
+    }
 
 
 # ============================================================
@@ -96,6 +184,7 @@ def register_device(
     device = Device(
         device_id=data.device_id,
         device_name=data.device_name,
+        device_type=data.device_type.upper(),
         secret_key=secret_key,
         status="offline",
     )
@@ -115,6 +204,8 @@ def register_device(
     return {
         "success": True,
         "device_id": device.device_id,
+        "device_name": device.device_name,
+        "device_type": device.device_type,
         "secret_key": device.secret_key,
         "status": device.status,
     }
@@ -124,7 +215,7 @@ def register_device(
 # GET ALL DEVICES
 # ============================================================
 
-@router.get("/")
+@router.get("/", response_model=list[DeviceResponse])
 def get_devices(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -139,6 +230,24 @@ def get_devices(
         .all()
     )
 
+    now = datetime.now(timezone.utc)
+    offline_time = now - timedelta(seconds=60)
+
+    for device in devices:
+        if device.last_seen:
+            last_seen = device.last_seen
+
+            # PostgreSQL may return a naive datetime
+            if last_seen.tzinfo is None:
+                last_seen = last_seen.replace(tzinfo=timezone.utc)
+
+            if last_seen >= offline_time:
+                device.status = "online"
+            else:
+                device.status = "offline"
+        else:
+            device.status = "offline"
+
     return devices
 
 
@@ -146,7 +255,7 @@ def get_devices(
 # GET SINGLE DEVICE
 # ============================================================
 
-@router.get("/{device_id}")
+@router.get("/{device_id}", response_model=DeviceResponse)
 def get_device(
     device_id: str,
     db: Session = Depends(get_db),
@@ -181,6 +290,9 @@ def update_device(
 
     if data.status is not None:
         device.status = data.status
+
+    if data.device_type is not None:
+        device.device_type = data.device_type.strip().upper()
 
     try:
         db.commit()
@@ -244,42 +356,44 @@ def send_command(
     current_user: User = Depends(get_current_user),
 ):
     """
-    Create a command for a device.
+    Create a command for a device with home access verification for non-admins.
 
     Command lifecycle:
-
-        pending
-           ↓
-        sent
-           ↓
-      completed / failed
-
-    The device receives pending commands
-    during its next heartbeat.
+        pending -> sent -> completed / failed
     """
 
     device = get_device_or_404(device_id, db)
-    command_name = data.command.strip().upper()
 
-    if command_name not in ALLOWED_PUMP_COMMANDS:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail={
-                "message": "Invalid pump command",
-                "allowed_commands": sorted(ALLOWED_PUMP_COMMANDS),
-            },
+    if current_user.role != "admin":
+        if not device.home_id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Device is not assigned to a home",
+            )
+
+        verify_home_access(
+            db=db,
+            user_id=current_user.id,
+            home_id=device.home_id,
+            required_roles=["OWNER", "ADMIN", "MEMBER"],
         )
 
-    command = DeviceCommandModel(
-        device_id=device.id,
-        command=command_name,
-        status="pending",
-    )
-
     try:
-        db.add(command)
+        command = create_device_command(
+            db=db,
+            device=device,
+            command=data.command,
+        )
+
         db.commit()
         db.refresh(command)
+
+    except ValueError as e:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e),
+        )
 
     except Exception:
         db.rollback()
@@ -309,75 +423,36 @@ def heartbeat(
     db: Session = Depends(get_db),
 ):
     """
-    Device heartbeat.
+    Device heartbeat processing.
 
-    Updates:
+    Delegates heartbeat logic to heartbeat_service.
 
-    - last_seen
-    - online status
+    Handles:
+    - device online status
+    - last seen timestamp
     - firmware version
-
-    If a pending command exists, the oldest one is returned
-    and its status changes from pending -> sent.
+    - pending commands
+    - OTA information
     """
 
-    # --------------------------------------------------------
-    # Update device heartbeat information
-    # --------------------------------------------------------
-
-    device.last_seen = datetime.now(timezone.utc)
-    device.status = "online"
-
-    if data.firmware_version:
-        device.firmware_version = data.firmware_version
-
-    # --------------------------------------------------------
-    # Find oldest pending command
-    # --------------------------------------------------------
-
-    command = (
-        db.query(DeviceCommandModel)
-        .filter(
-            DeviceCommandModel.device_id == device.id,
-            DeviceCommandModel.status == "pending",
-        )
-        .order_by(DeviceCommandModel.created_at.asc())
-        .first()
-    )
-
-    response_command = None
-
-    if command:
-        command.status = "sent"
-        command.sent_at = datetime.now(timezone.utc)
-
-        response_command = {
-            "command_id": command.id,
-            "command": command.command,
-        }
-
-    # --------------------------------------------------------
-    # Save changes
-    # --------------------------------------------------------
-
     try:
+        result = process_heartbeat(
+            db=db,
+            device=device,
+            telemetry=data.model_dump(),
+        )
+
         db.commit()
-        db.refresh(device)
+
+        return result
 
     except Exception:
         db.rollback()
+
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to process heartbeat",
         )
-
-    return {
-        "success": True,
-        "status": device.status,
-        "last_seen": device.last_seen,
-        "firmware_version": device.firmware_version,
-        "command": response_command,
-    }
 
 
 # ============================================================
@@ -394,16 +469,7 @@ def acknowledge_command(
 ):
     """
     Device reports the result of a command.
-
-    Allowed final statuses:
-
-    - completed
-    - failed
     """
-
-    # --------------------------------------------------------
-    # Security check
-    # --------------------------------------------------------
 
     if device.device_id != device_id:
         raise HTTPException(
@@ -411,19 +477,11 @@ def acknowledge_command(
             detail="Device authentication mismatch",
         )
 
-    # --------------------------------------------------------
-    # Validate ACK status
-    # --------------------------------------------------------
-
     if data.status not in {"completed", "failed"}:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Invalid command status",
         )
-
-    # --------------------------------------------------------
-    # Find command
-    # --------------------------------------------------------
 
     command = (
         db.query(DeviceCommandModel)
@@ -440,11 +498,7 @@ def acknowledge_command(
             detail="Command not found",
         )
 
-    # --------------------------------------------------------
-    # Prevent duplicate ACK / invalid state transition
-    # --------------------------------------------------------
-
-    if command.status in {"completed", "failed"}:
+    if command.status in {"completed", "failed", "cancelled"}:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="Command has already been completed",
@@ -456,17 +510,22 @@ def acknowledge_command(
             detail=f"Command cannot be acknowledged from status '{command.status}'",
         )
 
-    # --------------------------------------------------------
-    # Update command
-    # --------------------------------------------------------
-
     command.status = data.status
     command.completed_at = datetime.now(timezone.utc)
+
+    # General device state update logic
+    if data.status == "completed":
+        if command.command.endswith("_ON"):
+            device.state = "ON"
+        elif command.command.endswith("_OFF"):
+            device.state = "OFF"
+        elif hasattr(device, "mode") and command.command in {"AUTO_MODE", "MANUAL_MODE"}:
+            device.mode = command.command
 
     try:
         db.commit()
         db.refresh(command)
-
+        db.refresh(device)
     except Exception:
         db.rollback()
         raise HTTPException(
@@ -495,17 +554,13 @@ def get_device_commands(
 ):
     """
     Get command history for a device.
-
-    Commands are returned from newest to oldest.
     """
 
     device = get_device_or_404(device_id, db)
 
     commands = (
         db.query(DeviceCommandModel)
-        .filter(
-            DeviceCommandModel.device_id == device.id,
-        )
+        .filter(DeviceCommandModel.device_id == device.id)
         .order_by(DeviceCommandModel.created_at.desc())
         .all()
     )

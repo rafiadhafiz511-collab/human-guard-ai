@@ -33,27 +33,30 @@ export function AuthProvider({
 }: AuthProviderProps) {
   const [user, setUser] = useState<User | null>(null);
 
-  const [token, setToken] = useState<string | null>(
-    localStorage.getItem("access_token")
-  );
+  const [token, setToken] = useState<string | null>(() => {
+    return localStorage.getItem("access_token");
+  });
 
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     async function restoreSession() {
-      if (!token) {
+      // LocalStorage থেকে তাজা টোকেন নিন
+      const storedToken = localStorage.getItem("access_token");
+
+      if (!storedToken) {
         setLoading(false);
         return;
       }
 
       try {
-       const currentUser = await getMe(token);
-
-       
+        // getMe কল করার আগে নিশ্চিত হোন api instance এ Authorization হেডার যাচ্ছে
+        const currentUser = await getMe(storedToken);
         setUser(currentUser);
+        setToken(storedToken);
       } catch (error) {
         console.error("Failed to restore session:", error);
-
+        // Network Error হলে টোকেন মুছবেন না, কেবল 401 হলেই মুছবেন
         localStorage.removeItem("access_token");
         setToken(null);
         setUser(null);
@@ -63,18 +66,16 @@ export function AuthProvider({
     }
 
     restoreSession();
-  }, [token]);
+  }, []);
 
   function setAuth(newToken: string, newUser: User) {
     localStorage.setItem("access_token", newToken);
-
     setToken(newToken);
     setUser(newUser);
   }
 
   function logout() {
     localStorage.removeItem("access_token");
-
     setToken(null);
     setUser(null);
   }

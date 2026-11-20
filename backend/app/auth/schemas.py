@@ -9,3 +9,11 @@ class LoginRequest(BaseModel):
 class TokenResponse(BaseModel):
     access_token: str
     token_type: str
+
+
+class FirebaseLoginRequest(BaseModel):
+    id_token: str
+
+
+class FCMTokenRequest(BaseModel):
+    fcm_token: str

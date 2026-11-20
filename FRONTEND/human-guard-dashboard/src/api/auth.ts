@@ -1,7 +1,7 @@
 import axios from "axios";
 
 const authApi = axios.create({
-  baseURL: "http://127.0.0.1:8000",
+  baseURL: import.meta.env.VITE_AUTH_URL || "http://127.0.0.1:8000",
   timeout: 10000,
 });
 
@@ -52,6 +52,19 @@ export async function getMe(
       headers: {
         Authorization: `Bearer ${token}`,
       },
+    }
+  );
+
+  return response.data;
+}
+
+export async function firebaseLogin(
+  idToken: string
+): Promise<LoginResponse> {
+  const response = await authApi.post(
+    "/auth/google-firebase",
+    {
+      id_token: idToken,
     }
   );
 

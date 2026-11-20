@@ -1,8 +1,17 @@
 import { useState, type FormEvent } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 
-import { login, getMe } from "../api/auth";
+import {
+  GoogleAuthProvider,
+  signInWithPopup,
+} from "firebase/auth";
+import {
+  login,
+  getMe,
+  firebaseLogin,
+} from "../api/auth";
 import useAuth from "../hooks/useAuth";
+import { auth } from "../config/firebase";
 
 export default function Login() {
   const navigate = useNavigate();
@@ -15,6 +24,63 @@ export default function Login() {
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+
+  async function handleGoogleLogin() {
+    setError("");
+    setLoading(true);
+
+    try {
+      const provider = new GoogleAuthProvider();
+
+      const result = await signInWithPopup(auth, provider);
+
+      console.log("GOOGLE USER:", result.user);
+
+      const idToken = await result.user.getIdToken();
+
+      console.log("FIREBASE ID TOKEN:", idToken);
+
+      const loginResponse = await firebaseLogin(idToken);
+
+      console.log(
+        "BACKEND LOGIN RESPONSE:",
+        loginResponse
+      );
+
+      const token = loginResponse.access_token;
+
+      console.log(
+        "BACKEND JWT:",
+        token
+      );
+
+      localStorage.setItem("access_token", token);
+
+      const user = await getMe(token);
+
+      console.log(
+        "BACKEND USER:",
+        user
+      );
+
+      setAuth(token, user);
+
+      navigate("/", {
+        replace: true,
+      });
+    } catch (error) {
+      console.error(
+        "GOOGLE LOGIN FAILED:",
+        error
+      );
+
+      setError(
+        "Google sign-in failed. Please try again."
+      );
+    } finally {
+      setLoading(false);
+    }
+  }
 
   async function handleSubmit(event: FormEvent) {
     event.preventDefault();
@@ -30,6 +96,9 @@ export default function Login() {
       });
 
       const token = loginResponse.access_token;
+
+      // LocalStorage এ টোকেন সেভ
+      localStorage.setItem("access_token", token);
 
       // 2. Get current user using JWT token
       const user = await getMe(token);
@@ -70,6 +139,21 @@ export default function Login() {
             {error}
           </div>
         )}
+
+        <button
+          type="button"
+          onClick={handleGoogleLogin}
+          disabled={loading}
+          className="mb-5 flex w-full items-center justify-center gap-3 rounded-lg border border-slate-300 bg-white px-4 py-3 font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+        >
+          Continue with Google
+        </button>
+
+        <div className="mb-5 flex items-center gap-3">
+          <div className="h-px flex-1 bg-slate-200" />
+          <span className="text-sm text-slate-400">OR</span>
+          <div className="h-px flex-1 bg-slate-200" />
+        </div>
 
         <form
           onSubmit={handleSubmit}

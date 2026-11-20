@@ -1,48 +1,22 @@
 from app.database.database import SessionLocal
+# প্রজেক্টের সব মডেল যেন মেমরিতে রেজিস্টার্ড হয়
+import app.models  # অথবা আপনার models ফোল্ডারের সব মডেল একসাথে
 from app.models.user import User
 from app.auth.password import hash_password
 
-
-EMAIL = "admin@humanguard.ai"
-PASSWORD = "12345678"
-
 db = SessionLocal()
 
-try:
-    admin = db.query(User).filter(User.email == EMAIL).first()
+user = (
+    db.query(User)
+    .filter(User.email == "admin@humanguard.ai")
+    .first()
+)
 
-    if admin:
-        admin.name = "Admin"
-        admin.email = EMAIL
-        admin.password = hash_password(PASSWORD)
-        admin.role = "admin"
-        admin.is_active = True
-
-        print("Admin account reset successfully.")
-
-    else:
-        admin = User(
-            name="Admin",
-            email=EMAIL,
-            password=hash_password(PASSWORD),
-            role="admin",
-            is_active=True,
-        )
-
-        db.add(admin)
-
-        print("Admin account created successfully.")
-
+if user:
+    user.password = hash_password("12345678")
     db.commit()
+    print("Password updated successfully")
+else:
+    print("User not found")
 
-    print()
-    print("Email:", EMAIL)
-    print("Password:", PASSWORD)
-    print("Role: admin")
-
-except Exception as e:
-    db.rollback()
-    print("Error:", e)
-
-finally:
-    db.close()
+db.close()

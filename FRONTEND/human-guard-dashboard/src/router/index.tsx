@@ -1,33 +1,67 @@
-import { createBrowserRouter } from "react-router-dom";
+import {
+  createBrowserRouter,
+  RouterProvider,
+} from "react-router-dom";
 
 import MainLayout from "../layouts/MainLayout";
 
 import Dashboard from "../pages/Dashboard";
 import Devices from "../pages/Devices";
-import Detections from "../pages/Detections";
+import Rooms from "../pages/Rooms";
+import Schedules from "../pages/Schedules";
+import Activity from "../pages/Activity";
 import Settings from "../pages/Settings";
+import Login from "../pages/Login";
 
-export const router = createBrowserRouter([
+import ProtectedRoute from "./ProtectedRoute";
+
+const router = createBrowserRouter([
   {
-    path: "/",
-    element: <MainLayout />,
+    path: "/login",
+    element: <Login />,
+  },
+
+  {
+    element: <ProtectedRoute />,
     children: [
       {
-        index: true,
-        element: <Dashboard />,
-      },
-      {
-        path: "devices",
-        element: <Devices />,
-      },
-      {
-        path: "detections",
-        element: <Detections />,
-      },
-      {
-        path: "settings",
-        element: <Settings />,
+        path: "/",
+        element: <MainLayout />,
+        children: [
+          {
+            index: true,
+            element: <Dashboard />,
+          },
+          {
+            path: "devices",
+            element: <Devices />,
+          },
+          {
+            path: "rooms",
+            element: <Rooms />,
+          },
+          {
+            path: "schedules",
+            element: <Schedules />,
+          },
+          {
+            path: "activity",
+            element: <Activity />,
+          },
+          {
+            path: "analytics",
+            element: <Dashboard />,
+          },
+          {
+            path: "settings",
+            element: <Settings />,
+          },
+        ],
       },
     ],
   },
 ]);
+
+export default function AppRouter() {
+  return <RouterProvider router={router} />;
+}

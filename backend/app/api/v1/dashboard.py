@@ -98,6 +98,15 @@ def dashboard_stats(
         or 0
     )
 
+    cancelled_commands = (
+        db.query(func.count(DeviceCommandModel.id))
+        .filter(
+            DeviceCommandModel.status == "cancelled"
+        )
+        .scalar()
+        or 0
+    )
+
     # ============================================================
     # LATEST COMMAND
     # ============================================================
@@ -109,6 +118,16 @@ def dashboard_stats(
         )
         .first()
     )
+
+    latest_command_device = None
+
+
+    if latest_command:
+        latest_command_device = (
+            db.query(Device)
+            .filter(Device.id == latest_command.device_id)
+            .first()
+        )
 
     # ============================================================
     # RESPONSE
@@ -127,12 +146,17 @@ def dashboard_stats(
             "sent": sent_commands,
             "completed": completed_commands,
             "failed": failed_commands,
+            "cancelled": cancelled_commands,
         },
 
         "latest_command": (
             {
                 "id": latest_command.id,
-                "device_id": latest_command.device_id,
+                "device_id": (
+                    latest_command_device.device_id
+                    if latest_command_device
+                    else latest_command.device_id
+                ),
                 "command": latest_command.command,
                 "status": latest_command.status,
                 "created_at": (
