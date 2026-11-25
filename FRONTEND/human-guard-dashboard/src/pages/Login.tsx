@@ -1,121 +1,73 @@
 import { useState, type FormEvent } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
-
-import {
-  GoogleAuthProvider,
-  signInWithPopup,
-} from "firebase/auth";
-import {
-  login,
-  getMe,
-  firebaseLogin,
-} from "../api/auth";
+import { supabase } from "../lib/supabase";
 import useAuth from "../hooks/useAuth";
-import { auth } from "../config/firebase";
+
+const API_BASE_URL =
+  (import.meta.env.VITE_API_BASE_URL as string) ||
+  "https://human-guard-ai-api.onrender.com";
 
 export default function Login() {
   const navigate = useNavigate();
   const location = useLocation();
-
   const { setAuth } = useAuth();
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
-  async function handleGoogleLogin() {
-    setError("");
-    setLoading(true);
-
-    try {
-      const provider = new GoogleAuthProvider();
-
-      const result = await signInWithPopup(auth, provider);
-
-      console.log("GOOGLE USER:", result.user);
-
-      const idToken = await result.user.getIdToken();
-
-      console.log("FIREBASE ID TOKEN:", idToken);
-
-      const loginResponse = await firebaseLogin(idToken);
-
-      console.log(
-        "BACKEND LOGIN RESPONSE:",
-        loginResponse
-      );
-
-      const token = loginResponse.access_token;
-
-      console.log(
-        "BACKEND JWT:",
-        token
-      );
-
-      localStorage.setItem("access_token", token);
-
-      const user = await getMe(token);
-
-      console.log(
-        "BACKEND USER:",
-        user
-      );
-
-      setAuth(token, user);
-
-      navigate("/", {
-        replace: true,
-      });
-    } catch (error) {
-      console.error(
-        "GOOGLE LOGIN FAILED:",
-        error
-      );
-
-      setError(
-        "Google sign-in failed. Please try again."
-      );
-    } finally {
-      setLoading(false);
-    }
-  }
-
   async function handleSubmit(event: FormEvent) {
     event.preventDefault();
-
     setError("");
     setLoading(true);
 
     try {
-      // 1. Login
-      const loginResponse = await login({
-        email,
-        password,
-      });
+      // ১. Supabase Auth দিয়ে Email + Password লগইন
+      const { data, error: authError } =
+        await supabase.auth.signInWithPassword({
+          email: email.trim(),
+          password,
+        });
 
-      const token = loginResponse.access_token;
+      if (authError || !data.session) {
+        throw new Error(authError?.message || "Invalid email or password.");
+      }
 
-      // LocalStorage এ টোকেন সেভ
+      const token = data.session.access_token;
       localStorage.setItem("access_token", token);
 
-      // 2. Get current user using JWT token
-      const user = await getMe(token);
+      // ২. ব্যাকএন্ড থেকে বর্তমান ইউজার তথ্য আনা (Supabase JWT সহ)
+      let currentUser = data.user;
+      try {
+        const meRes = await fetch(`${API_BASE_URL}/auth/me`, {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        });
+        if (meRes.ok) {
+          currentUser = await meRes.json();
+        }
+      } catch (meErr) {
+        console.warn("Could not fetch /auth/me from backend yet:", meErr);
+      }
 
-      // 3. Save authentication state
-      setAuth(token, user);
+      // ৩. Auth state আপডেট
+      setAuth(token, currentUser);
 
-      // 4. Redirect
+      // ৪. পূর্বের পেজ বা ড্যাশবোর্ডে রিডাইরেক্ট
       const from =
         (location.state as { from?: { pathname?: string } } | null)
           ?.from?.pathname || "/";
 
       navigate(from, { replace: true });
-    } catch (error) {
-      console.error("Login failed:", error);
-
-      setError("Invalid email or password.");
+    } catch (err) {
+      console.error("Supabase login failed:", err);
+      setError(
+        err instanceof Error && err.message
+          ? err.message
+          : "Invalid email or password."
+      );
     } finally {
       setLoading(false);
     }
@@ -128,7 +80,6 @@ export default function Login() {
           <h1 className="text-3xl font-bold text-slate-900">
             Human Guard AI
           </h1>
-
           <p className="mt-2 text-slate-500">
             Sign in to your security dashboard
           </p>
@@ -140,25 +91,7 @@ export default function Login() {
           </div>
         )}
 
-        <button
-          type="button"
-          onClick={handleGoogleLogin}
-          disabled={loading}
-          className="mb-5 flex w-full items-center justify-center gap-3 rounded-lg border border-slate-300 bg-white px-4 py-3 font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
-        >
-          Continue with Google
-        </button>
-
-        <div className="mb-5 flex items-center gap-3">
-          <div className="h-px flex-1 bg-slate-200" />
-          <span className="text-sm text-slate-400">OR</span>
-          <div className="h-px flex-1 bg-slate-200" />
-        </div>
-
-        <form
-          onSubmit={handleSubmit}
-          className="space-y-5"
-        >
+        <form onSubmit={handleSubmit} className="space-y-5">
           <div>
             <label
               htmlFor="email"
@@ -166,18 +99,15 @@ export default function Login() {
             >
               Email
             </label>
-
             <input
               id="email"
               type="email"
               value={email}
-              onChange={(event) =>
-                setEmail(event.target.value)
-              }
+              onChange={(event) => setEmail(event.target.value)}
               required
               autoComplete="email"
               className="w-full rounded-lg border border-slate-300 px-4 py-3 outline-none focus:border-slate-500"
-              placeholder="admin@humanguard.ai"
+              placeholder="rafiadhafiz511@gmail.com"
             />
           </div>
 
@@ -188,14 +118,11 @@ export default function Login() {
             >
               Password
             </label>
-
             <input
               id="password"
               type="password"
               value={password}
-              onChange={(event) =>
-                setPassword(event.target.value)
-              }
+              onChange={(event) => setPassword(event.target.value)}
               required
               autoComplete="current-password"
               className="w-full rounded-lg border border-slate-300 px-4 py-3 outline-none focus:border-slate-500"
