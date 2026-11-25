@@ -1,3 +1,4 @@
+import asyncio
 import os
 from pathlib import Path
 
@@ -24,15 +25,11 @@ from app.api.v1.telemetry import router as telemetry_router
 from app.api.v1.websocket import router as websocket_router
 
 # ============================================================
-# AUTH
+# AUTH & CORE
 # ============================================================
 
 from app.auth.router import router as auth_router
-
-# ============================================================
-# DATABASE
-# ============================================================
-
+from app.core.mqtt import set_main_event_loop, start_mqtt, stop_mqtt
 from app.database.init_db import init_db
 
 
@@ -48,11 +45,12 @@ app = FastAPI(
 
 # ============================================================
 # DYNAMIC CORS CONFIGURATION
-# Allows Localhost + Vercel Production Deployments
 # ============================================================
 
 allowed_origins_env = os.getenv("ALLOWED_ORIGINS", "")
-allowed_origins_list = [origin.strip() for origin in allowed_origins_env.split(",") if origin.strip()]
+allowed_origins_list = [
+    origin.strip() for origin in allowed_origins_env.split(",") if origin.strip()
+]
 
 default_origins = [
     "http://localhost:5173",
@@ -99,44 +97,18 @@ def root():
 
 
 # ============================================================
-# CORE API ROUTERS
-# ============================================================
-
-app.include_router(
-    detect_router,
-    prefix="/api/v1",
-)
-
-app.include_router(
-    device_router,
-    prefix="/api/v1",
-)
-
-app.include_router(
-    detections_router,
-    prefix="/api/v1",
-)
-
-app.include_router(
-    dashboard_router,
-    prefix="/api/v1",
-)
-
-
-# ============================================================
-# AUTH ROUTER
+# ROUTERS
 # ============================================================
 
 app.include_router(
     auth_router,
 )
 
-
-# ============================================================
-# V1 API ROUTERS
-# ============================================================
-
 V1_ROUTERS = (
+    detect_router,
+    device_router,
+    detections_router,
+    dashboard_router,
     automation_router,
     schedules_router,
     homes_router,
@@ -156,12 +128,18 @@ for router in V1_ROUTERS:
 
 
 # ============================================================
-# STARTUP
+# LIFECYCLE EVENTS
 # ============================================================
 
 @app.on_event("startup")
-def startup():
-    """
-    Initialize database models/schema on application startup.
-    """
+async def startup() -> None:
+    """Initialize database schema, event loop reference, and MQTT client."""
     init_db()
+    set_main_event_loop(asyncio.get_running_loop())
+    start_mqtt()
+
+
+@app.on_event("shutdown")
+def shutdown() -> None:
+    """Stop MQTT background client cleanly."""
+    stop_mqtt()

@@ -1,8 +1,10 @@
-import logging
 import asyncio
 import json
+import logging
 from datetime import datetime, timezone
+
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect, status
+
 from app.core.websocket_manager import manager
 
 router = APIRouter()
@@ -12,159 +14,107 @@ logger = logging.getLogger(__name__)
 HEARTBEAT_INTERVAL = 30
 
 
-@router.websocket("/ws/homes/{home_id}")
-async def websocket_endpoint(websocket: WebSocket, home_id: str):
-    """
-    WebSocket endpoint for real-time device updates.
-    Includes heartbeat (ping/pong) to maintain connection stability.
-    """
-    await manager.connect(websocket, home_id)
-    heartbeat_task = None
-    
-    try:
-        # Start heartbeat task
-        heartbeat_task = asyncio.create_task(
-            send_heartbeat(websocket, home_id)
-        )
-        
-        while True:
-            try:
-                # Receive message from client (keep-alive or data)
-                data = await asyncio.wait_for(
-                    websocket.receive_text(),
-                    timeout=HEARTBEAT_INTERVAL + 10  # Allow some buffer
-                )
-                
-                # Process incoming message
-                try:
-                    message = json.loads(data)
-                    logger.debug(f"[WS RECEIVED] Home: {home_id} | Data: {message}")
-                    
-                    # Echo back for keep-alive / pong
-                    if message.get("type") == "ping":
-                        await websocket.send_json({"type": "pong"})
-                        
-                except json.JSONDecodeError:
-                    logger.warning(f"[WS] Invalid JSON from {home_id}")
-                    
-            except asyncio.TimeoutError:
-                # Client is silent, but we're still connected
-                # Heartbeat will keep the connection alive
-                continue
-                
-    except WebSocketDisconnect:
-        logger.info(f"[WS DISCONNECTED] Home: {home_id}")
-        manager.disconnect(websocket, home_id)
-        
-    except Exception as e:
-        logger.error(f"[WS EXCEPTION] Home: {home_id} | Error: {e}")
-        manager.disconnect(websocket, home_id)
-        
-    finally:
-        # Clean up heartbeat task
-        if heartbeat_task:
-            heartbeat_task.cancel()
-            try:
-                await heartbeat_task
-            except asyncio.CancelledError:
-                pass
-        
-        # Ensure disconnection
-        try:
-            await websocket.close(code=status.WS_1000_NORMAL_CLOSURE)
-        except Exception:
-            pass
-        manager.disconnect(websocket, home_id)
-
-
-async def send_heartbeat(websocket: WebSocket, home_id: str):
-    """
-    Send periodic heartbeat (ping) to keep WebSocket connection alive.
-    """
+async def _send_periodic_ping(websocket: WebSocket, label: str) -> None:
+    """সংযোগ সচল রাখতে নির্দিষ্ট বিরতিতে ping পাঠায়।"""
     while True:
         try:
             await asyncio.sleep(HEARTBEAT_INTERVAL)
             await websocket.send_json({
                 "type": "ping",
-                "timestamp": datetime.now(timezone.utc).isoformat()
+                "timestamp": datetime.now(timezone.utc).isoformat(),
             })
-            logger.debug(f"[WS HEARTBEAT] Sent to home {home_id}")
-            
+            logger.debug("[WS HEARTBEAT] Sent ping (%s)", label)
         except Exception as e:
-            logger.debug(f"[WS HEARTBEAT FAILED] Home: {home_id} | Error: {e}")
+            logger.debug("[WS HEARTBEAT STOPPED] (%s) | Error: %s", label, e)
             break
+
+
+@router.websocket("/ws/homes/{home_id}")
+async def websocket_endpoint(websocket: WebSocket, home_id: str) -> None:
+    """নির্দিষ্ট হোমের রিয়েল-টাইম ডিভাইস ও টেলিমেট্রি আপডেটের WebSocket এন্ডপয়েন্ট।"""
+    home_key = str(home_id)
+    await manager.connect(websocket, home_key)
+    heartbeat_task = asyncio.create_task(
+        _send_periodic_ping(websocket, f"home:{home_key}")
+    )
+
+    try:
+        while True:
+            try:
+                data = await asyncio.wait_for(
+                    websocket.receive_text(),
+                    timeout=HEARTBEAT_INTERVAL + 10,
+                )
+                try:
+                    message = json.loads(data)
+                    logger.debug("[WS RECEIVED] Home: %s | Data: %s", home_key, message)
+                    if isinstance(message, dict) and message.get("type") == "ping":
+                        await websocket.send_json({
+                            "type": "pong",
+                            "timestamp": datetime.now(timezone.utc).isoformat(),
+                        })
+                except json.JSONDecodeError:
+                    logger.warning("[WS] Invalid JSON from home %s", home_key)
+            except asyncio.TimeoutError:
+                continue
+
+    except WebSocketDisconnect:
+        logger.info("[WS DISCONNECTED] Home: %s", home_key)
+    except Exception as e:
+        logger.error("[WS EXCEPTION] Home: %s | Error: %s", home_key, e)
+    finally:
+        heartbeat_task.cancel()
+        try:
+            await heartbeat_task
+        except asyncio.CancelledError:
+            pass
+        manager.disconnect(websocket, home_key)
+        try:
+            await websocket.close(code=status.WS_1000_NORMAL_CLOSURE)
+        except Exception:
+            pass
 
 
 @router.websocket("/ws/devices")
-async def websocket_devices_endpoint(websocket: WebSocket):
-    """
-    Global WebSocket endpoint for all device updates and automation triggers.
-    Broadcasts to all connected clients.
-    """
+async def websocket_devices_endpoint(websocket: WebSocket) -> None:
+    """গ্লোবাল ডিভাইস আপডেট ও keep-alive ping/pong হ্যান্ডলার।"""
     await websocket.accept()
     logger.info("[WS DEVICES] Client connected")
-    heartbeat_task = None
-    
+    heartbeat_task = asyncio.create_task(
+        _send_periodic_ping(websocket, "global:devices")
+    )
+
     try:
-        # Start heartbeat task
-        heartbeat_task = asyncio.create_task(
-            send_global_heartbeat(websocket)
-        )
-        
         while True:
             try:
-                # Receive message from client
                 data = await asyncio.wait_for(
                     websocket.receive_text(),
-                    timeout=HEARTBEAT_INTERVAL + 10
+                    timeout=HEARTBEAT_INTERVAL + 10,
                 )
-                
                 try:
                     message = json.loads(data)
-                    logger.debug(f"[WS DEVICES RECEIVED] Data: {message}")
-                    
-                    if message.get("type") == "ping":
-                        await websocket.send_json({"type": "pong"})
-                        
+                    logger.debug("[WS DEVICES RECEIVED] Data: %s", message)
+                    if isinstance(message, dict) and message.get("type") == "ping":
+                        await websocket.send_json({
+                            "type": "pong",
+                            "timestamp": datetime.now(timezone.utc).isoformat(),
+                        })
                 except json.JSONDecodeError:
                     logger.warning("[WS DEVICES] Invalid JSON received")
-                    
             except asyncio.TimeoutError:
                 continue
-                
+
     except WebSocketDisconnect:
         logger.info("[WS DEVICES] Client disconnected")
-        
     except Exception as e:
-        logger.error(f"[WS DEVICES EXCEPTION] Error: {e}")
-        
+        logger.error("[WS DEVICES EXCEPTION] Error: %s", e)
     finally:
-        if heartbeat_task:
-            heartbeat_task.cancel()
-            try:
-                await heartbeat_task
-            except asyncio.CancelledError:
-                pass
-        
+        heartbeat_task.cancel()
+        try:
+            await heartbeat_task
+        except asyncio.CancelledError:
+            pass
         try:
             await websocket.close(code=status.WS_1000_NORMAL_CLOSURE)
         except Exception:
             pass
-
-
-async def send_global_heartbeat(websocket: WebSocket):
-    """
-    Send periodic heartbeat to the global devices endpoint.
-    """
-    while True:
-        try:
-            await asyncio.sleep(HEARTBEAT_INTERVAL)
-            await websocket.send_json({
-                "type": "ping",
-                "timestamp": datetime.now(timezone.utc).isoformat()
-            })
-            logger.debug("[WS DEVICES HEARTBEAT] Sent ping")
-            
-        except Exception as e:
-            logger.debug(f"[WS DEVICES HEARTBEAT FAILED] Error: {e}")
-            break

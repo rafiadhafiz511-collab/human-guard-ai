@@ -1,7 +1,7 @@
-
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 
 import MainLayout from "./layouts/MainLayout";
+import DeviceClaimGate from "./components/DeviceClaimGate";
 
 import Dashboard from "./pages/Dashboard";
 import Devices from "./pages/Devices";
@@ -20,60 +20,25 @@ export default function App() {
     <AuthProvider>
       <HomeProvider>
         <BrowserRouter>
-          <Routes>
-            <Route path="/" element={<MainLayout />}>
-              <Route index element={<Dashboard />} />
+          <DeviceClaimGate>
+            <Routes>
+              <Route path="/" element={<MainLayout />}>
+                <Route index element={<Dashboard />} />
+                <Route path="devices" element={<Devices />} />
+                <Route path="rooms" element={<Rooms />} />
+                <Route path="schedules" element={<Schedules />} />
+                <Route path="activity" element={<Activity />} />
+                <Route path="settings" element={<Settings />} />
+                <Route path="detections" element={<Detections />} />
+                <Route path="analytics" element={<Dashboard />} />
 
-              <Route
-                path="devices"
-                element={<Devices />}
-              />
-
-              <Route
-                path="rooms"
-                element={<Rooms />}
-              />
-
-              <Route
-                path="schedules"
-                element={<Schedules />}
-              />
-
-              <Route
-                path="activity"
-                element={<Activity />}
-              />
-
-              <Route
-                path="settings"
-                element={<Settings />}
-              />
-
-              <Route
-                path="detections"
-                element={<Detections />}
-              />
-
-              <Route
-                path="analytics"
-                element={<Dashboard />}
-              />
-
-              {/* Redirect unknown paths to dashboard */}
-              <Route
-                path="*"
-                element={
-                  <Navigate
-                    to="/"
-                    replace
-                  />
-                }
-              />
-            </Route>
-          </Routes>
+                {/* Redirect unknown paths to dashboard */}
+                <Route path="*" element={<Navigate to="/" replace />} />
+              </Route>
+            </Routes>
+          </DeviceClaimGate>
         </BrowserRouter>
       </HomeProvider>
     </AuthProvider>
   );
 }
-

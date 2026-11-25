@@ -13,15 +13,8 @@ type Member = {
 };
 
 export default function Settings() {
-  // Existing state variables
-  const [mqttBroker, setMqttBroker] = useState("mqtt.humanguard.ai");
-  const [mqttPort, setMqttPort] = useState("8883");
-  const [apiKey, setApiKey] = useState("hg_live_99a8b7c6d5e4f3a2b1");
-  const [notifications, setNotifications] = useState({
-    email: true,
-    telegram: false,
-    criticalAlertsOnly: true,
-  });
+  const [emailAlerts, setEmailAlerts] = useState(true);
+  const [savedNotice, setSavedNotice] = useState<string | null>(null);
 
   // Home & Member Management states
   const [homes, setHomes] = useState<Home[]>([]);
@@ -34,7 +27,6 @@ export default function Settings() {
   const [actionLoading, setActionLoading] = useState(false);
   const [memberMsg, setMemberMsg] = useState<{ text: string; isError: boolean } | null>(null);
 
-  // ১. হোমের মেম্বার লিস্ট ফ্রেচ করা
   const fetchMembers = useCallback(async (homeId: string) => {
     if (!homeId || homeId === "default-home") return;
     try {
@@ -49,7 +41,6 @@ export default function Settings() {
     }
   }, []);
 
-  // ২. ইউজারদের হোমস ফ্রেচ করা (এন্ডপয়েন্ট না থাকলেও ফলব্যাক হ্যান্ডেল করবে)
   const fetchHomes = useCallback(async () => {
     try {
       const res = await api.get("/homes/");
@@ -61,8 +52,7 @@ export default function Settings() {
           if (createRes.data) {
             fetchedHomes = [createRes.data];
           }
-        } catch (e) {
-          // Backend POST call fail করলেও UI যেন না আটকায়
+        } catch {
           fetchedHomes = [{ id: "default-home", name: "Main Building" }];
         }
       }
@@ -72,7 +62,7 @@ export default function Settings() {
         const firstHomeId = fetchedHomes[0].id || "default-home";
         setSelectedHomeId(firstHomeId);
         if (firstHomeId !== "default-home") {
-          fetchMembers(firstHomeId);
+          void fetchMembers(firstHomeId);
         }
       }
     } catch (err) {
@@ -84,19 +74,17 @@ export default function Settings() {
   }, [fetchMembers]);
 
   useEffect(() => {
-    fetchHomes();
+    void fetchHomes();
   }, [fetchHomes]);
 
-  // ৩. ইউজার যোগ করার ফাংশন
   const handleAddUser = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newMemberEmail) {
-      setMemberMsg({ text: "অনুগ্রহ করে একটি ইমেইল দিন।", isError: true });
+      setMemberMsg({ text: "Please enter a valid email address.", isError: true });
       return;
     }
 
     let activeHomeId = selectedHomeId;
-
     if (!activeHomeId && homes.length > 0) {
       activeHomeId = homes[0].id;
     }
@@ -105,7 +93,6 @@ export default function Settings() {
       setActionLoading(true);
       setMemberMsg(null);
 
-      // যদি ব্যাকএন্ডে হোম তৈরি করা না থাকে, তবে প্রথমে একটি হোম বানিয়ে নেওয়া হবে
       if (activeHomeId === "default-home") {
         try {
           const createHomeRes = await api.post("/homes/", { name: "Main Building" });
@@ -113,8 +100,8 @@ export default function Settings() {
             activeHomeId = createHomeRes.data.id;
             setSelectedHomeId(activeHomeId);
           }
-        } catch (err) {
-          console.warn("Could not create home automatically, trying direct member add");
+        } catch {
+          // Proceed with direct member add attempt if home creation fails
         }
       }
 
@@ -123,15 +110,15 @@ export default function Settings() {
         role: "member",
       });
 
-      setMemberMsg({ text: "ইউজার সফলভাবে যুক্ত করা হয়েছে!", isError: false });
+      setMemberMsg({ text: "User added successfully!", isError: false });
       setNewMemberEmail("");
       if (activeHomeId !== "default-home") {
-        fetchMembers(activeHomeId);
+        void fetchMembers(activeHomeId);
       }
-    } catch (err: any) {
-      console.error("Failed to add user:", err);
+    } catch (err: unknown) {
+      const apiErr = err as { response?: { data?: { detail?: string } } };
       setMemberMsg({
-        text: err.response?.data?.detail || "ইউজার যুক্ত করতে সমস্যা হয়েছে। Backend API চেক করুন।",
+        text: apiErr.response?.data?.detail || "Failed to add user. Please check backend API.",
         isError: true,
       });
     } finally {
@@ -139,18 +126,17 @@ export default function Settings() {
     }
   };
 
-  // ৪. ইউজার ডিলিট করার ফাংশন
   const handleRemoveUser = async (userId: string) => {
-    if (!confirm("আপনি কি নিশ্চিত যে এই ইউজারকে মুছে ফেলতে চান?")) return;
+    if (!confirm("Are you sure you want to remove this user?")) return;
 
     try {
       await api.delete(`/homes/${selectedHomeId}/members/${userId}`);
-      setMemberMsg({ text: "ইউজার সফলভাবে মুছে ফেলা হয়েছে!", isError: false });
-      fetchMembers(selectedHomeId);
-    } catch (err: any) {
-      console.error("Failed to remove user:", err);
+      setMemberMsg({ text: "User removed successfully!", isError: false });
+      void fetchMembers(selectedHomeId);
+    } catch (err: unknown) {
+      const apiErr = err as { response?: { data?: { detail?: string } } };
       setMemberMsg({
-        text: err.response?.data?.detail || "ইউজার মুছে ফেলতে সমস্যা হয়েছে।",
+        text: apiErr.response?.data?.detail || "Failed to remove user.",
         isError: true,
       });
     }
@@ -158,7 +144,8 @@ export default function Settings() {
 
   const handleSaveSettings = (e: React.FormEvent) => {
     e.preventDefault();
-    alert("Settings updated successfully!");
+    setSavedNotice("Preferences updated.");
+    setTimeout(() => setSavedNotice(null), 2500);
   };
 
   return (
@@ -169,7 +156,7 @@ export default function Settings() {
           System Settings
         </h1>
         <p className="mt-1 text-xs text-white/50">
-          Manage system configurations, hardware gateway, and security keys
+          Manage building members and basic alert preferences
         </p>
       </div>
 
@@ -191,7 +178,7 @@ export default function Settings() {
                 value={selectedHomeId}
                 onChange={(e) => {
                   setSelectedHomeId(e.target.value);
-                  fetchMembers(e.target.value);
+                  void fetchMembers(e.target.value);
                 }}
                 className="rounded-xl border border-white/10 bg-black/60 px-3 py-2 text-xs text-cyan-400 outline-none font-mono"
               >
@@ -270,7 +257,7 @@ export default function Settings() {
                       <td className="py-3 text-right">
                         <button
                           type="button"
-                          onClick={() => handleRemoveUser(m.user_id)}
+                          onClick={() => void handleRemoveUser(m.user_id)}
                           className="rounded-lg border border-rose-500/30 bg-rose-500/10 px-3 py-1.5 text-[11px] font-semibold text-rose-400 hover:bg-rose-500/20 transition"
                         >
                           Delete
@@ -284,108 +271,40 @@ export default function Settings() {
           </div>
         </div>
 
-        {/* MQTT & OTHER SYSTEM SETTINGS */}
+        {/* EMAIL ALERT PREFERENCE */}
         <form onSubmit={handleSaveSettings} className="space-y-6">
-          {/* MQTT BROKER CONFIGURATION */}
-          <div className="rounded-3xl border border-white/10 bg-black/40 p-6 backdrop-blur-xl shadow-xl">
-            <h2 className="text-sm font-bold text-cyan-400 uppercase tracking-widest font-mono mb-4">
-              MQTT Gateway Configuration
-            </h2>
-            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-              <div>
-                <label className="text-xs font-semibold text-white/60">Broker Address</label>
-                <input
-                  type="text"
-                  value={mqttBroker}
-                  onChange={(e) => setMqttBroker(e.target.value)}
-                  className="mt-1 w-full rounded-xl border border-white/10 bg-black/50 p-3 text-xs text-white font-mono outline-none focus:border-cyan-400"
-                />
-              </div>
-              <div>
-                <label className="text-xs font-semibold text-white/60">Port</label>
-                <input
-                  type="text"
-                  value={mqttPort}
-                  onChange={(e) => setMqttPort(e.target.value)}
-                  className="mt-1 w-full rounded-xl border border-white/10 bg-black/50 p-3 text-xs text-white font-mono outline-none focus:border-cyan-400"
-                />
-              </div>
-            </div>
-          </div>
-
-          {/* API & SECURITY */}
-          <div className="rounded-3xl border border-white/10 bg-black/40 p-6 backdrop-blur-xl shadow-xl">
-            <h2 className="text-sm font-bold text-cyan-400 uppercase tracking-widest font-mono mb-4">
-              API & Authentication
-            </h2>
-            <div>
-              <label className="text-xs font-semibold text-white/60">Secret API Key</label>
-              <div className="flex gap-3 mt-1">
-                <input
-                  type="password"
-                  value={apiKey}
-                  onChange={(e) => setApiKey(e.target.value)}
-                  className="flex-1 rounded-xl border border-white/10 bg-black/50 p-3 text-xs text-white font-mono outline-none focus:border-cyan-400"
-                />
-                <button
-                  type="button"
-                  onClick={() => navigator.clipboard.writeText(apiKey)}
-                  className="rounded-xl border border-white/10 bg-white/5 px-4 text-xs font-bold text-white/80 hover:bg-white/10"
-                >
-                  Copy
-                </button>
-              </div>
-            </div>
-          </div>
-
-          {/* NOTIFICATIONS */}
           <div className="rounded-3xl border border-white/10 bg-black/40 p-6 backdrop-blur-xl shadow-xl space-y-4">
             <h2 className="text-sm font-bold text-cyan-400 uppercase tracking-widest font-mono mb-2">
               Notification Preferences
             </h2>
-            <div className="flex items-center justify-between border-b border-white/5 pb-3">
+            <div className="flex items-center justify-between pb-1">
               <div>
                 <div className="text-xs font-bold text-white">Email Alerts</div>
                 <div className="text-[10px] text-white/50">Receive system reports via email</div>
               </div>
               <button
                 type="button"
-                onClick={() => setNotifications({ ...notifications, email: !notifications.email })}
+                onClick={() => setEmailAlerts((prev) => !prev)}
                 className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-                  notifications.email ? "bg-cyan-500" : "bg-white/10"
+                  emailAlerts ? "bg-cyan-500" : "bg-white/10"
                 }`}
               >
                 <span
                   className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                    notifications.email ? "translate-x-6" : "translate-x-1"
-                  }`}
-                />
-              </button>
-            </div>
-
-            <div className="flex items-center justify-between border-b border-white/5 pb-3">
-              <div>
-                <div className="text-xs font-bold text-white">Telegram Bot Alerts</div>
-                <div className="text-[10px] text-white/50">Get instant trigger messages on Telegram</div>
-              </div>
-              <button
-                type="button"
-                onClick={() => setNotifications({ ...notifications, telegram: !notifications.telegram })}
-                className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-                  notifications.telegram ? "bg-cyan-500" : "bg-white/10"
-                }`}
-              >
-                <span
-                  className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                    notifications.telegram ? "translate-x-6" : "translate-x-1"
+                    emailAlerts ? "translate-x-6" : "translate-x-1"
                   }`}
                 />
               </button>
             </div>
           </div>
 
-          {/* SAVE BUTTON */}
-          <div className="flex justify-end pt-2">
+          {savedNotice && (
+            <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-4 py-2.5 text-xs text-emerald-300">
+              {savedNotice}
+            </div>
+          )}
+
+          <div className="flex justify-end pt-1">
             <button
               type="submit"
               className="rounded-2xl bg-cyan-500 px-6 py-3 text-xs font-bold text-black transition hover:bg-cyan-400 active:scale-95 shadow-[0_0_20px_rgba(6,182,212,0.3)]"

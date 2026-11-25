@@ -1,19 +1,44 @@
 import asyncio
 import json
 import logging
+import os
 import threading
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any
 
 import paho.mqtt.client as mqtt
+from dotenv import load_dotenv
 from sqlalchemy.orm import Session
 
+from app.core.websocket_manager import manager
 from app.database.database import SessionLocal
 from app.models.device import Device
-from app.core.websocket_manager import manager
 
 
 logger = logging.getLogger(__name__)
+
+
+# ============================================================
+# ENVIRONMENT CONFIGURATION
+# ============================================================
+
+# mqtt.py -> backend/app/core/mqtt.py
+# parents[2] -> backend/
+BACKEND_ROOT = Path(__file__).resolve().parents[2]
+ENV_FILE = BACKEND_ROOT / ".env"
+load_dotenv(dotenv_path=ENV_FILE)
+
+
+def _get_int_env(name: str, default: int) -> int:
+    raw = os.getenv(name)
+    if raw is None or not raw.strip():
+        return default
+    try:
+        return int(raw.strip())
+    except ValueError:
+        logger.warning("Invalid integer for %s=%r, using default=%s", name, raw, default)
+        return default
 
 
 # ============================================================
@@ -24,9 +49,7 @@ main_loop: asyncio.AbstractEventLoop | None = None
 
 
 def set_main_event_loop(loop: asyncio.AbstractEventLoop) -> None:
-    """
-    FastAPI startup (main.py) এ মূল Event Loop সেট করার জন্য।
-    """
+    """FastAPI মূল async event loop রেফারেন্স সেট করে।"""
     global main_loop
     main_loop = loop
 
@@ -35,9 +58,18 @@ def set_main_event_loop(loop: asyncio.AbstractEventLoop) -> None:
 # MQTT CONFIGURATION
 # ============================================================
 
-MQTT_BROKER_HOST = "broker.hivemq.com"
-MQTT_BROKER_PORT = 1883
-MQTT_KEEPALIVE = 60
+MQTT_BROKER_HOST = (
+    os.getenv("MQTT_BROKER")
+    or os.getenv("MQTT_BROKER_HOST")
+    or "localhost"
+)
+MQTT_BROKER_PORT = _get_int_env(
+    "MQTT_PORT",
+    _get_int_env("MQTT_BROKER_PORT", 1883),
+)
+MQTT_KEEPALIVE = _get_int_env("MQTT_KEEPALIVE", 60)
+MQTT_USERNAME = (os.getenv("MQTT_USERNAME") or "").strip()
+MQTT_PASSWORD = os.getenv("MQTT_PASSWORD") or ""
 
 MQTT_TOPIC_TELEMETRY = "humantech/devices/+/telemetry"
 MQTT_TOPIC_COMMAND = "humantech/devices/{device_id}/command"
@@ -48,6 +80,9 @@ MQTT_TOPIC_COMMAND = "humantech/devices/{device_id}/command"
 # ============================================================
 
 mqtt_client = mqtt.Client()
+if MQTT_USERNAME:
+    mqtt_client.username_pw_set(MQTT_USERNAME, MQTT_PASSWORD or None)
+
 _mqtt_started = False
 _mqtt_lock = threading.Lock()
 
@@ -62,15 +97,18 @@ def get_device_id_from_topic(topic: str) -> str | None:
     humantech/devices/{device_id}/telemetry
     """
     parts = topic.split("/")
-    if len(parts) == 4 and parts[0] == "humantech" and parts[1] == "devices" and parts[3] == "telemetry":
+    if (
+        len(parts) == 4
+        and parts[0] == "humantech"
+        and parts[1] == "devices"
+        and parts[3] == "telemetry"
+    ):
         return parts[2]
     return None
 
 
 def decode_json_payload(payload: bytes) -> dict[str, Any] | None:
-    """
-    Decode MQTT payload as a JSON dictionary.
-    """
+    """Decode MQTT payload as a JSON dictionary."""
     try:
         decoded = payload.decode("utf-8")
         data = json.loads(decoded)
@@ -89,9 +127,7 @@ def decode_json_payload(payload: bytes) -> dict[str, Any] | None:
 # ============================================================
 
 def on_connect(client, userdata, flags, rc):
-    """
-    MQTT broker connection callback.
-    """
+    """MQTT broker connection callback."""
     if rc == 0:
         logger.info("MQTT connected successfully: %s:%s", MQTT_BROKER_HOST, MQTT_BROKER_PORT)
         result, _ = client.subscribe(MQTT_TOPIC_TELEMETRY, qos=1)
@@ -104,9 +140,7 @@ def on_connect(client, userdata, flags, rc):
 
 
 def on_disconnect(client, userdata, rc):
-    """
-    MQTT disconnect callback.
-    """
+    """MQTT disconnect callback."""
     if rc == 0:
         logger.info("MQTT disconnected normally.")
     else:
@@ -119,29 +153,21 @@ def on_disconnect(client, userdata, rc):
 
 def broadcast_to_home(home_id: str | None, payload: dict[str, Any]) -> None:
     """
-    Safely delegate WebSocket broadcast from MQTT background thread
-    to FastAPI main async event loop.
+    MQTT ব্যাকগ্রাউন্ড থ্রেড থেকে নিরাপদে FastAPI মূল event loop-এ
+    WebSocket ব্রডকাস্ট শিডিউল করে।
     """
     if not home_id:
         return
 
-    global main_loop
-
-    # Fallback attempt if main_loop wasn't explicitly set
-    if main_loop is None:
-        try:
-            main_loop = asyncio.get_event_loop()
-        except RuntimeError:
-            pass
-
-    if main_loop and main_loop.is_running():
+    loop = main_loop
+    if loop and not loop.is_closed() and loop.is_running():
         asyncio.run_coroutine_threadsafe(
             manager.broadcast_to_home(str(home_id), payload),
-            main_loop,
+            loop,
         )
     else:
         logger.warning(
-            "Main event loop is not available/running. WS broadcast skipped for home=%s",
+            "Main event loop is not running. WS broadcast skipped for home=%s",
             home_id,
         )
 
@@ -151,20 +177,16 @@ def broadcast_to_home(home_id: str | None, payload: dict[str, Any]) -> None:
 # ============================================================
 
 def process_telemetry_message(device_id: str, telemetry_data: dict[str, Any]) -> None:
-    """
-    Process telemetry, update DB, trigger automation, and broadcast via WS.
-    """
+    """Process telemetry, update DB, trigger automation, and broadcast via WS."""
     db: Session = SessionLocal()
 
     try:
-        # 1. Find device
         device = db.query(Device).filter(Device.device_id == device_id).first()
 
         if not device:
             logger.warning("Telemetry received from unknown device_id=%s", device_id)
             return
 
-        # 2. Update status and timestamp
         device.last_seen = datetime.now(timezone.utc)
         device.status = "online"
 
@@ -178,7 +200,6 @@ def process_telemetry_message(device_id: str, telemetry_data: dict[str, Any]) ->
 
         logger.info("[MQTT TELEMETRY] device=%s data=%s", device.device_id, telemetry_data)
 
-        # 3. Automation Engine
         if device.home_id:
             from app.services.automation_engine import process_device_telemetry_or_state
 
@@ -189,7 +210,6 @@ def process_telemetry_message(device_id: str, telemetry_data: dict[str, Any]) ->
                 incoming_data=telemetry_data,
             )
 
-        # 4. Broadcast live update to mobile app via WebSocket
         ws_payload = {
             "event": "device_telemetry_update",
             "device_id": device.device_id,
@@ -211,9 +231,7 @@ def process_telemetry_message(device_id: str, telemetry_data: dict[str, Any]) ->
 
 
 def on_message(client, userdata, msg):
-    """
-    MQTT incoming message callback.
-    """
+    """MQTT incoming message callback."""
     try:
         device_id = get_device_id_from_topic(msg.topic)
         if not device_id:
@@ -235,9 +253,7 @@ def on_message(client, userdata, msg):
 # ============================================================
 
 def start_mqtt() -> None:
-    """
-    Start MQTT client in background thread loop.
-    """
+    """Start MQTT client in background thread loop."""
     global _mqtt_started
 
     with _mqtt_lock:
@@ -263,9 +279,7 @@ def start_mqtt() -> None:
 
 
 def stop_mqtt() -> None:
-    """
-    Stop MQTT client safely.
-    """
+    """Stop MQTT client safely."""
     global _mqtt_started
 
     with _mqtt_lock:
@@ -291,7 +305,7 @@ def publish_device_command(device_id: str, command_payload: dict[str, Any]) -> b
     Publish command payload to hardware device.
     Topic: humantech/devices/{device_id}/command
     """
-    if not device_id:
+    if not device_id or not str(device_id).strip():
         logger.error("Cannot publish command: device_id is empty.")
         return False
 
@@ -303,7 +317,7 @@ def publish_device_command(device_id: str, command_payload: dict[str, Any]) -> b
         logger.warning("MQTT is not connected. Command not sent. device=%s", device_id)
         return False
 
-    topic = MQTT_TOPIC_COMMAND.format(device_id=device_id)
+    topic = MQTT_TOPIC_COMMAND.format(device_id=str(device_id).strip())
 
     try:
         payload = json.dumps(command_payload, separators=(",", ":"))

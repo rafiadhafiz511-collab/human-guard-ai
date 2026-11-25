@@ -30,30 +30,103 @@ router = APIRouter(
     tags=["Devices"],
 )
 
+ONLINE_GRACE_SECONDS = 60
+
 
 # ============================================================
-# HELPER
+# HELPERS
 # ============================================================
 
 def get_device_or_404(
     device_id: str,
     db: Session,
 ) -> Device:
-    """Return a device or raise 404."""
-
+    """Return a device by device_id or raise 404."""
     device = (
         db.query(Device)
         .filter(Device.device_id == device_id)
         .first()
     )
-
     if not device:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Device not found",
         )
-
     return device
+
+
+def _enforce_device_access(
+    db: Session,
+    current_user: User,
+    device: Device,
+    required_roles: list[str] | None = None,
+) -> None:
+    """Ensure non-admin users have access to the device's assigned home."""
+    if getattr(current_user, "role", None) == "admin":
+        return
+
+    if not device.home_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Device is not assigned to a home",
+        )
+
+    verify_home_access(
+        db=db,
+        user_id=current_user.id,
+        home_id=device.home_id,
+        required_roles=required_roles or ["OWNER", "ADMIN", "MEMBER"],
+    )
+
+
+def _compute_live_status(device: Device, now: datetime) -> str:
+    """Compute online/offline status based on recent heartbeat timestamp."""
+    if not device.last_seen:
+        return "offline"
+
+    last_seen = device.last_seen
+    if last_seen.tzinfo is None:
+        last_seen = last_seen.replace(tzinfo=timezone.utc)
+
+    cutoff = now - timedelta(seconds=ONLINE_GRACE_SECONDS)
+    return "online" if last_seen >= cutoff else "offline"
+
+
+def _apply_completed_command_state(
+    db: Session,
+    device: Device,
+    command_str: str,
+) -> None:
+    """Update device or channel state when a command completes."""
+    normalized = (command_str or "").strip().upper()
+
+    if normalized.startswith("CHANNEL:"):
+        parts = normalized.split(":")
+        if len(parts) == 3 and parts[2] in {"ON", "OFF"}:
+            try:
+                ch_num = int(parts[1])
+            except ValueError:
+                ch_num = None
+
+            if ch_num is not None:
+                channel = (
+                    db.query(DeviceChannel)
+                    .filter(
+                        DeviceChannel.device_id == device.id,
+                        DeviceChannel.channel_number == ch_num,
+                    )
+                    .first()
+                )
+                if channel is not None and hasattr(channel, "state"):
+                    channel.state = parts[2]
+        return
+
+    if normalized.endswith("_ON"):
+        device.state = "ON"
+    elif normalized.endswith("_OFF"):
+        device.state = "OFF"
+    elif hasattr(device, "mode") and normalized in {"AUTO_MODE", "MANUAL_MODE"}:
+        device.mode = normalized
 
 
 # ============================================================
@@ -67,24 +140,8 @@ def request_device_ota(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_admin),
 ):
-    """
-    Request an OTA firmware update for a device.
-
-    Only administrators can request firmware updates.
-    """
-
-    # --------------------------------------------------------
-    # GET DEVICE
-    # --------------------------------------------------------
-
-    device = get_device_or_404(
-        device_id,
-        db,
-    )
-
-    # --------------------------------------------------------
-    # GET FIRMWARE
-    # --------------------------------------------------------
+    """Request an OTA firmware update for a device (admin only)."""
+    device = get_device_or_404(device_id, db)
 
     firmware = (
         db.query(Firmware)
@@ -94,16 +151,11 @@ def request_device_ota(
         )
         .first()
     )
-
     if not firmware:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Firmware not found",
         )
-
-    # --------------------------------------------------------
-    # REQUEST OTA
-    # --------------------------------------------------------
 
     try:
         request_ota_update(
@@ -111,31 +163,20 @@ def request_device_ota(
             device=device,
             firmware=firmware,
         )
-
         db.commit()
         db.refresh(device)
-
     except ValueError as e:
-
         db.rollback()
-
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(e),
         )
-
     except Exception:
-
         db.rollback()
-
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to request OTA update",
         )
-
-    # --------------------------------------------------------
-    # RESPONSE
-    # --------------------------------------------------------
 
     return {
         "success": True,
@@ -158,19 +199,12 @@ def register_device(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_admin),
 ):
-    """
-    Register a new device.
-
-    If the device already exists, return its existing information.
-    Only administrators can register devices.
-    """
-
+    """Register a new device or return existing device info (admin only)."""
     existing_device = (
         db.query(Device)
         .filter(Device.device_id == data.device_id)
         .first()
     )
-
     if existing_device:
         return {
             "message": "Device already registered",
@@ -180,11 +214,10 @@ def register_device(
         }
 
     secret_key = secrets.token_hex(32)
-
     device = Device(
         device_id=data.device_id,
         device_name=data.device_name,
-        device_type=data.device_type.upper(),
+        device_type=data.device_type.strip().upper(),
         secret_key=secret_key,
         status="offline",
     )
@@ -193,7 +226,6 @@ def register_device(
         db.add(device)
         db.commit()
         db.refresh(device)
-
     except Exception:
         db.rollback()
         raise HTTPException(
@@ -220,10 +252,7 @@ def get_devices(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """
-    Get all registered devices.
-    """
-
+    """Get registered devices visible to the current user."""
     devices = (
         db.query(Device)
         .order_by(Device.device_id.asc())
@@ -231,24 +260,27 @@ def get_devices(
     )
 
     now = datetime.now(timezone.utc)
-    offline_time = now - timedelta(seconds=60)
+    visible_devices: list[Device] = []
 
     for device in devices:
-        if device.last_seen:
-            last_seen = device.last_seen
+        device.status = _compute_live_status(device, now)
+        if getattr(current_user, "role", None) == "admin":
+            visible_devices.append(device)
+            continue
 
-            # PostgreSQL may return a naive datetime
-            if last_seen.tzinfo is None:
-                last_seen = last_seen.replace(tzinfo=timezone.utc)
+        if device.home_id:
+            try:
+                verify_home_access(
+                    db=db,
+                    user_id=current_user.id,
+                    home_id=device.home_id,
+                    required_roles=["OWNER", "ADMIN", "MEMBER"],
+                )
+                visible_devices.append(device)
+            except HTTPException:
+                continue
 
-            if last_seen >= offline_time:
-                device.status = "online"
-            else:
-                device.status = "offline"
-        else:
-            device.status = "offline"
-
-    return devices
+    return visible_devices
 
 
 # ============================================================
@@ -261,11 +293,11 @@ def get_device(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """
-    Get a specific device by device_id.
-    """
-
-    return get_device_or_404(device_id, db)
+    """Get a specific device by device_id."""
+    device = get_device_or_404(device_id, db)
+    _enforce_device_access(db, current_user, device)
+    device.status = _compute_live_status(device, datetime.now(timezone.utc))
+    return device
 
 
 # ============================================================
@@ -279,17 +311,17 @@ def update_device(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """
-    Update device information.
-    """
-
+    """Update device metadata."""
     device = get_device_or_404(device_id, db)
+    _enforce_device_access(
+        db,
+        current_user,
+        device,
+        required_roles=["OWNER", "ADMIN"],
+    )
 
     if data.device_name is not None:
         device.device_name = data.device_name
-
-    if data.status is not None:
-        device.status = data.status
 
     if data.device_type is not None:
         device.device_type = data.device_type.strip().upper()
@@ -297,7 +329,6 @@ def update_device(
     try:
         db.commit()
         db.refresh(device)
-
     except Exception:
         db.rollback()
         raise HTTPException(
@@ -318,18 +349,12 @@ def delete_device(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_admin),
 ):
-    """
-    Delete a registered device.
-
-    Only administrators can delete devices.
-    """
-
+    """Delete a registered device (admin only)."""
     device = get_device_or_404(device_id, db)
 
     try:
         db.delete(device)
         db.commit()
-
     except Exception:
         db.rollback()
         raise HTTPException(
@@ -355,28 +380,9 @@ def send_command(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """
-    Create a command for a device with home access verification for non-admins.
-
-    Command lifecycle:
-        pending -> sent -> completed / failed
-    """
-
+    """Create a pending command for a device."""
     device = get_device_or_404(device_id, db)
-
-    if current_user.role != "admin":
-        if not device.home_id:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Device is not assigned to a home",
-            )
-
-        verify_home_access(
-            db=db,
-            user_id=current_user.id,
-            home_id=device.home_id,
-            required_roles=["OWNER", "ADMIN", "MEMBER"],
-        )
+    _enforce_device_access(db, current_user, device)
 
     try:
         command = create_device_command(
@@ -384,17 +390,14 @@ def send_command(
             device=device,
             command=data.command,
         )
-
         db.commit()
         db.refresh(command)
-
     except ValueError as e:
         db.rollback()
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(e),
         )
-
     except Exception:
         db.rollback()
         raise HTTPException(
@@ -422,33 +425,25 @@ def heartbeat(
     device: Device = Depends(authenticate_device),
     db: Session = Depends(get_db),
 ):
-    """
-    Device heartbeat processing.
-
-    Delegates heartbeat logic to heartbeat_service.
-
-    Handles:
-    - device online status
-    - last seen timestamp
-    - firmware version
-    - pending commands
-    - OTA information
-    """
+    """Process device heartbeat and return pending commands / OTA info."""
+    payload = data.model_dump()
+    reported_device_id = payload.get("device_id")
+    if reported_device_id and str(reported_device_id) != str(device.device_id):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Device authentication mismatch",
+        )
 
     try:
         result = process_heartbeat(
             db=db,
             device=device,
-            telemetry=data.model_dump(),
+            telemetry=payload,
         )
-
         db.commit()
-
         return result
-
     except Exception:
         db.rollback()
-
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to process heartbeat",
@@ -467,10 +462,7 @@ def acknowledge_command(
     device: Device = Depends(authenticate_device),
     db: Session = Depends(get_db),
 ):
-    """
-    Device reports the result of a command.
-    """
-
+    """Device reports the execution result of a sent command."""
     if device.device_id != device_id:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -491,7 +483,6 @@ def acknowledge_command(
         )
         .first()
     )
-
     if not command:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -501,7 +492,7 @@ def acknowledge_command(
     if command.status in {"completed", "failed", "cancelled"}:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail="Command has already been completed",
+            detail="Command has already been finalized",
         )
 
     if command.status != "sent":
@@ -513,14 +504,8 @@ def acknowledge_command(
     command.status = data.status
     command.completed_at = datetime.now(timezone.utc)
 
-    # General device state update logic
     if data.status == "completed":
-        if command.command.endswith("_ON"):
-            device.state = "ON"
-        elif command.command.endswith("_OFF"):
-            device.state = "OFF"
-        elif hasattr(device, "mode") and command.command in {"AUTO_MODE", "MANUAL_MODE"}:
-            device.mode = command.command
+        _apply_completed_command_state(db, device, command.command)
 
     try:
         db.commit()
@@ -552,11 +537,9 @@ def get_device_commands(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """
-    Get command history for a device.
-    """
-
+    """Get command history for a device."""
     device = get_device_or_404(device_id, db)
+    _enforce_device_access(db, current_user, device)
 
     commands = (
         db.query(DeviceCommandModel)

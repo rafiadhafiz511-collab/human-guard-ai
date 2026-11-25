@@ -1,4 +1,3 @@
-
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from jose import JWTError, jwt
@@ -30,12 +29,9 @@ def get_current_user(
             SECRET_KEY,
             algorithms=[ALGORITHM],
         )
-
         sub = payload.get("sub")
-
         if not sub:
             raise credentials_exception
-
     except JWTError:
         raise credentials_exception
 
@@ -52,4 +48,3 @@ def get_current_user(
         raise credentials_exception
 
     return user
-

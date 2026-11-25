@@ -1,4 +1,3 @@
-
 import os
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -11,19 +10,10 @@ from jose import jwt
 # Environment Configuration
 # ============================================================
 
-# security.py
-#   app/
-#     auth/
-#       security.py
-#
-# Project root:
-#   human-guard-ai/
-#
-# Therefore:
-#   parents[3] = human-guard-ai/
-PROJECT_ROOT = Path(__file__).resolve().parents[3]
-
-ENV_FILE = PROJECT_ROOT / ".env"
+# security.py -> backend/app/auth/security.py
+# parents[2] -> backend/
+BACKEND_ROOT = Path(__file__).resolve().parents[2]
+ENV_FILE = BACKEND_ROOT / ".env"
 
 load_dotenv(dotenv_path=ENV_FILE)
 
