@@ -33,6 +33,9 @@ ENV PYTHONUNBUFFERED=1 \
 RUN apt-get update && apt-get install -y --no-install-recommends \
     postgresql-client \
     curl \
+    libxcb1 \
+    libgl1 \
+    libglib2.0-0 \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy Python packages from builder
@@ -61,7 +64,7 @@ EXPOSE 8000
 
 # Run Gunicorn with Uvicorn workers
 CMD ["gunicorn", \
-     "--workers=4", \
+     "--workers=2", \
      "--worker-class=uvicorn.workers.UvicornWorker", \
      "--worker-tmp-dir=/dev/shm", \
      "--bind=0.0.0.0:8000", \
