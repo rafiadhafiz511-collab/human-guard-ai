@@ -27,7 +27,11 @@ ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     PIP_NO_CACHE_DIR=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1 \
-    ENVIRONMENT=production
+    ENVIRONMENT=production \
+    OMP_NUM_THREADS=1 \
+    MKL_NUM_THREADS=1 \
+    OPENBLAS_NUM_THREADS=1 \
+    OPENCV_OPENCL_RUNTIME=disabled
 
 # Install runtime dependencies only
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -64,7 +68,7 @@ EXPOSE 8000
 
 # Run Gunicorn with Uvicorn workers
 CMD ["gunicorn", \
-     "--workers=2", \
+     "--workers=1", \
      "--worker-class=uvicorn.workers.UvicornWorker", \
      "--worker-tmp-dir=/dev/shm", \
      "--bind=0.0.0.0:8000", \
