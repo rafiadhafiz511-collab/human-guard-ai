@@ -23,39 +23,57 @@ export default function Login() {
     setLoading(true);
 
     try {
+      const cleanEmail = email.trim();
+
       // ১. Supabase Auth দিয়ে Email + Password লগইন
       const { data, error: authError } =
         await supabase.auth.signInWithPassword({
-          email: email.trim(),
+          email: cleanEmail,
           password,
         });
 
-      if (authError || !data.session) {
+      if (authError || !data.session || !data.user) {
         throw new Error(authError?.message || "Invalid email or password.");
       }
 
       const token = data.session.access_token;
       localStorage.setItem("access_token", token);
 
-      // ২. ব্যাকএন্ড থেকে বর্তমান ইউজার তথ্য আনা (Supabase JWT সহ)
-      let currentUser = data.user;
+      // ২. `setAuth`-এর User টাইপ অনুযায়ী নিরাপদ ইউজার অবজেক্ট তৈরি
+      let currentUser: Record<string, unknown> = {
+        id: data.user.id,
+        email: data.user.email ?? cleanEmail,
+        role: (data.user.user_metadata?.role as string) || "user",
+      };
+
+      // ৩. ব্যাকএন্ড থেকে বর্তমান ইউজার তথ্য আনার চেষ্টা (দ্রুত টাইমআউটসহ)
       try {
         const meRes = await fetch(`${API_BASE_URL}/auth/me`, {
           headers: {
             Authorization: `Bearer ${token}`,
           },
+          signal: AbortSignal.timeout(4000),
         });
+
         if (meRes.ok) {
-          currentUser = await meRes.json();
+          const backendUser = (await meRes.json()) as Record<string, unknown>;
+          currentUser = {
+            ...currentUser,
+            ...backendUser,
+            email:
+              typeof backendUser.email === "string" && backendUser.email
+                ? backendUser.email
+                : (currentUser.email as string),
+          };
         }
       } catch (meErr) {
         console.warn("Could not fetch /auth/me from backend yet:", meErr);
       }
 
-      // ৩. Auth state আপডেট
-      setAuth(token, currentUser);
+      // ৪. Auth state আপডেট
+      setAuth(token, currentUser as Parameters<typeof setAuth>[1]);
 
-      // ৪. পূর্বের পেজ বা ড্যাশবোর্ডে রিডাইরেক্ট
+      // ৫. পূর্বের পেজ বা ড্যাশবোর্ডে রিডাইরেক্ট
       const from =
         (location.state as { from?: { pathname?: string } } | null)
           ?.from?.pathname || "/";
