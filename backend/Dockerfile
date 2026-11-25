@@ -1,7 +1,7 @@
 # ============================================================
 # STAGE 1: BUILDER
 # ============================================================
-FROM python:3.12-slim as builder
+FROM python:3.12-slim AS builder
 
 WORKDIR /app
 
@@ -11,7 +11,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy requirements and install dependencies
-COPY backend/requirements.txt .
+COPY requirements.txt .
 RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir -r requirements.txt
 
@@ -40,11 +40,11 @@ COPY --from=builder /usr/local/lib/python3.12/site-packages /usr/local/lib/pytho
 COPY --from=builder /usr/local/bin /usr/local/bin
 
 # Copy application code
-COPY backend/app ./app
-COPY backend/alembic ./alembic
-COPY backend/alembic.ini .
-COPY backend/.env.example ./.env.example
-COPY backend/pyproject.toml .
+COPY app ./app
+COPY alembic ./alembic
+COPY alembic.ini .
+COPY .env.example ./.env.example
+COPY pyproject.toml .
 
 # Create non-root user for security
 RUN useradd -m -u 1000 appuser && \
