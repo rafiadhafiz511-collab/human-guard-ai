@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
-import { supabase } from "../lib/supabase";
+import { supabase } from "../lib/supabase.ts";
 import useAuth from "../hooks/useAuth";
 
 const API_BASE_URL =
@@ -25,7 +25,7 @@ export default function Login() {
     try {
       const cleanEmail = email.trim();
 
-      // ১. Supabase Auth দিয়ে Email + Password লগইন
+      // ১. Supabase Auth দিয়ে Email + Password লগইন
       const { data, error: authError } =
         await supabase.auth.signInWithPassword({
           email: cleanEmail,
@@ -39,20 +39,23 @@ export default function Login() {
       const token = data.session.access_token;
       localStorage.setItem("access_token", token);
 
-      // ২. `setAuth`-এর User টাইপ অনুযায়ী নিরাপদ ইউজার অবজেক্ট তৈরি
+      // ২. `setAuth`-এর User টাইপ অনুযায়ী নিরাপদ ইউজার অবজেক্ট তৈরি
       let currentUser: Record<string, unknown> = {
         id: data.user.id,
         email: data.user.email ?? cleanEmail,
         role: (data.user.user_metadata?.role as string) || "user",
       };
 
-      // ৩. ব্যাকএন্ড থেকে বর্তমান ইউজার তথ্য আনার চেষ্টা (দ্রুত টাইমআউটসহ)
+      // ৩. ব্যাকএন্ড থেকে বর্তমান ইউজার তথ্য আনার চেষ্টা (নিরাপদ টাইমআউটসহ)
+      const controller = new AbortController();
+      const timeoutId = window.setTimeout(() => controller.abort(), 4000);
+
       try {
         const meRes = await fetch(`${API_BASE_URL}/auth/me`, {
           headers: {
             Authorization: `Bearer ${token}`,
           },
-          signal: AbortSignal.timeout(4000),
+          signal: controller.signal,
         });
 
         if (meRes.ok) {
@@ -68,6 +71,8 @@ export default function Login() {
         }
       } catch (meErr) {
         console.warn("Could not fetch /auth/me from backend yet:", meErr);
+      } finally {
+        window.clearTimeout(timeoutId);
       }
 
       // ৪. Auth state আপডেট
