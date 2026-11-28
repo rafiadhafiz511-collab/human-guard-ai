@@ -20,6 +20,39 @@ function getApiBaseUrl(): string {
   return "http://127.0.0.1:8000/api/v1";
 }
 
+function getStoredSupabaseToken(): string | null {
+  try {
+    const sbKey = Object.keys(localStorage).find(
+      (k) => k.startsWith("sb-") && k.endsWith("-auth-token")
+    );
+    if (!sbKey) return null;
+
+    const raw = localStorage.getItem(sbKey);
+    if (!raw) return null;
+
+    const parsed = JSON.parse(raw);
+    return parsed?.access_token || parsed?.currentSession?.access_token || null;
+  } catch {
+    return null;
+  }
+}
+
+async function resolveAccessToken(): Promise<string | null> {
+  try {
+    const {
+      data: { session },
+    } = await supabase.auth.getSession();
+
+    if (session?.access_token) {
+      return session.access_token;
+    }
+  } catch (err) {
+    console.warn("[API] supabase.auth.getSession() failed:", err);
+  }
+
+  return getStoredSupabaseToken() || localStorage.getItem("access_token");
+}
+
 const api: AxiosInstance = axios.create({
   baseURL: getApiBaseUrl(),
   timeout: 30_000,
@@ -31,23 +64,10 @@ const api: AxiosInstance = axios.create({
 
 api.interceptors.request.use(
   async (config: InternalAxiosRequestConfig) => {
-    try {
-      const {
-        data: { session },
-      } = await supabase.auth.getSession();
+    const token = await resolveAccessToken();
 
-      const token =
-        session?.access_token || localStorage.getItem("access_token");
-
-      if (token) {
-        config.headers.Authorization = `Bearer ${token}`;
-      }
-    } catch (err) {
-      console.warn("[API] Failed to read Supabase session:", err);
-      const fallbackToken = localStorage.getItem("access_token");
-      if (fallbackToken) {
-        config.headers.Authorization = `Bearer ${fallbackToken}`;
-      }
+    if (token) {
+      config.headers.set("Authorization", `Bearer ${token}`);
     }
 
     return config;
@@ -64,11 +84,11 @@ api.interceptors.response.use(
     const status = error.response?.status;
 
     if (status === 401) {
-      console.warn("[API] Unauthorized request (401).");
+      console.warn("[API] Unauthorized request (401):", error.response?.data);
     }
 
     if (status === 403) {
-      console.warn("[API] Forbidden request (403).");
+      console.warn("[API] Forbidden request (403):", error.response?.data);
     }
 
     if (status && status >= 500) {
