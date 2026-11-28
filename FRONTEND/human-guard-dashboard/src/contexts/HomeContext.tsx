@@ -1,4 +1,3 @@
-
 import {
   createContext,
   useContext,
@@ -8,6 +7,7 @@ import {
 } from "react";
 
 import {
+  createHome,
   getHomes,
   type Home,
 } from "../api/homes";
@@ -26,6 +26,7 @@ type HomeContextType = {
   error: string;
   switchHome: (homeId: string) => void;
   refreshHomes: () => Promise<void>;
+  addHome: (name: string) => Promise<Home>;
 };
 
 // ============================================================
@@ -154,6 +155,28 @@ export function HomeProvider({
   };
 
   // ==========================================================
+  // CREATE & SELECT HOME
+  // ==========================================================
+
+  const addHome = async (name: string): Promise<Home> => {
+    const trimmed = name.trim();
+    if (!trimmed) {
+      throw new Error("Home name is required");
+    }
+
+    const created = await createHome({ name: trimmed });
+    const latestHomes = await getHomes();
+    const mergedHomes = latestHomes.some((h) => h.id === created.id)
+      ? latestHomes
+      : [...latestHomes, created];
+
+    setHomes(mergedHomes);
+    setCurrentHomeId(created.id);
+    localStorage.setItem(CURRENT_HOME_STORAGE_KEY, created.id);
+    return created;
+  };
+
+  // ==========================================================
   // LOAD WHEN AUTH IS READY
   // ==========================================================
 
@@ -209,6 +232,7 @@ export function HomeProvider({
         error,
         switchHome,
         refreshHomes,
+        addHome,
       }}
     >
       {children}
