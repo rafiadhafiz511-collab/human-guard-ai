@@ -1,4 +1,6 @@
+import os
 from typing import Optional
+
 from fastapi import Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
@@ -8,18 +10,52 @@ from app.models.home_member import HomeMember
 from app.models.user import User
 
 
+def _is_global_admin(current_user: object) -> bool:
+    """রোল, মেটাডেটা অথবা নির্ধারিত অ্যাডমিন ইমেইল দিয়ে গ্লোবাল অ্যাডমিন যাচাই করে।"""
+    role = (getattr(current_user, "role", None) or "").strip().lower()
+    if role == "admin":
+        return True
+
+    email = (getattr(current_user, "email", None) or "").strip().lower()
+    payload = getattr(current_user, "payload", None)
+    if not email and isinstance(payload, dict):
+        email = (payload.get("email") or "").strip().lower()
+
+    admin_emails = {
+        e.strip().lower()
+        for e in (os.getenv("ADMIN_EMAILS") or "rafiadhafiz511@gmail.com").split(",")
+        if e.strip()
+    }
+    if email and email in admin_emails:
+        return True
+
+    if isinstance(payload, dict):
+        app_role = ((payload.get("app_metadata") or {}).get("role") or "").strip().lower()
+        user_role = ((payload.get("user_metadata") or {}).get("role") or "").strip().lower()
+        if app_role == "admin" or user_role == "admin":
+            return True
+
+    return False
+
+
 def require_admin(
     current_user: User = Depends(get_current_user),
 ) -> User:
     """
     গ্লোবাল সিস্টেম অ্যাডমিন রোল যাচাই করে।
     """
-    role = (getattr(current_user, "role", None) or "").strip().lower()
-    if role != "admin":
+    if not _is_global_admin(current_user):
+        role = (getattr(current_user, "role", None) or "").strip().lower()
+        email = (getattr(current_user, "email", None) or "").strip().lower()
+        print(
+            f"ADMIN CHECK FAILED: type={type(current_user).__name__}, id={getattr(current_user, 'id', None)}, email={email}, role={role}",
+            flush=True,
+        )
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Admin access required",
         )
+
     return current_user
 
 
