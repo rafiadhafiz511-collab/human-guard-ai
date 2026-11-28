@@ -1,9 +1,7 @@
-import axios from "axios";
+﻿import { supabase } from "../lib/supabase";
+import type { User } from "../contexts/AuthContext";
 
-const authApi = axios.create({
-  baseURL: import.meta.env.VITE_AUTH_URL || "http://127.0.0.1:8000",
-  timeout: 10000,
-});
+export type { User };
 
 export type LoginRequest = {
   email: string;
@@ -13,60 +11,56 @@ export type LoginRequest = {
 export type LoginResponse = {
   access_token: string;
   token_type: string;
+  user: User;
 };
 
-export type User = {
-  id?: string;
-  email: string;
-  name?: string;
-  role?: string;
-};
+export async function login(data: LoginRequest): Promise<LoginResponse> {
+  const { data: authData, error } = await supabase.auth.signInWithPassword({
+    email: data.email,
+    password: data.password,
+  });
 
-export async function login(
-  data: LoginRequest
-): Promise<LoginResponse> {
-  const body = new URLSearchParams();
+  if (error || !authData.session) {
+    throw new Error(error?.message || "Invalid email or password");
+  }
 
-  body.append("username", data.email);
-  body.append("password", data.password);
+  const sbUser = authData.user;
+  const mappedUser: User = {
+    id: sbUser.id,
+    email: sbUser.email || data.email,
+    name:
+      (sbUser.user_metadata?.name as string | undefined) ||
+      (sbUser.user_metadata?.full_name as string | undefined) ||
+      data.email.split("@")[0],
+    role: (sbUser.app_metadata?.role as string | undefined) || "user",
+  };
 
-  const response = await authApi.post(
-    "/auth/login",
-    body,
-    {
-      headers: {
-        "Content-Type": "application/x-www-form-urlencoded",
-      },
-    }
-  );
-
-  return response.data;
+  return {
+    access_token: authData.session.access_token,
+    token_type: "bearer",
+    user: mappedUser,
+  };
 }
 
-export async function getMe(
-  token: string
-): Promise<User> {
-  const response = await authApi.get(
-    "/auth/me",
-    {
-      headers: {
-        Authorization: `Bearer ${token}`,
-      },
-    }
-  );
+export async function getMe(): Promise<User | null> {
+  const {
+    data: { session },
+  } = await supabase.auth.getSession();
 
-  return response.data;
+  if (!session?.user) return null;
+
+  return {
+    id: session.user.id,
+    email: session.user.email || "",
+    name:
+      (session.user.user_metadata?.name as string | undefined) ||
+      (session.user.user_metadata?.full_name as string | undefined) ||
+      session.user.email?.split("@")[0] ||
+      "User",
+    role: (session.user.app_metadata?.role as string | undefined) || "user",
+  };
 }
 
-export async function firebaseLogin(
-  idToken: string
-): Promise<LoginResponse> {
-  const response = await authApi.post(
-    "/auth/google-firebase",
-    {
-      id_token: idToken,
-    }
-  );
-
-  return response.data;
+export async function logoutSupabase(): Promise<void> {
+  await supabase.auth.signOut();
 }
