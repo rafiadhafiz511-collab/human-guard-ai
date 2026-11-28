@@ -1,12 +1,15 @@
 ﻿import { useEffect, useState } from "react";
 import api from "../api/client";
 import type { Device } from "../types";
+import { RoomLightControl } from "./RoomLightControl";
 
 interface Props {
   device: Device;
   onRefresh: () => void;
   onDetails: (device: Device) => void;
 }
+
+const ROOM_LIGHT_CHANNEL_ID = "f3497fc706a64884acf5ef7d50dc93ed";
 
 export default function DashboardDeviceCard({
   device,
@@ -20,6 +23,7 @@ export default function DashboardDeviceCard({
   const isOnline = device.status?.toLowerCase() === "online";
   const isPump =
     device.device_type === "PUMP" || device.device_type === "SMART_PUMP";
+  const isRoomLightS3 = device.device_id === "ESP32S3_01";
   const isPumpOn = device.state?.toUpperCase() === "ON";
 
   useEffect(() => {
@@ -118,6 +122,16 @@ export default function DashboardDeviceCard({
         {(queuedCommand || feedback) && (
           <div className="mt-3 rounded-xl border border-cyan-400/20 bg-cyan-500/10 px-3 py-2 text-[11px] text-cyan-200">
             {feedback || `${queuedCommand} pending ACK...`}
+          </div>
+        )}
+
+        {isRoomLightS3 && (
+          <div className="mt-4" onClick={(e) => e.stopPropagation()}>
+            <RoomLightControl
+              deviceId={device.device_id}
+              channelId={ROOM_LIGHT_CHANNEL_ID}
+              label={device.device_name || "Room Light S3"}
+            />
           </div>
         )}
       </div>
