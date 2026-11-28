@@ -17,21 +17,27 @@ oauth2_scheme = OAuth2PasswordBearer(
     auto_error=True,
 )
 
-SUPABASE_URL = os.getenv(
-    "SUPABASE_URL",
-    "https://ljgnscuhcxobimuwlrzf.supabase.co",
-).rstrip("/")
-JWKS_URL = f"{SUPABASE_URL}/auth/v1/.well-known/jwks.json"
+DEFAULT_SUPABASE_URL = "https://ljgnscuhcxobimuwlrzf.supabase.co"
 SUPABASE_JWT_SECRET = os.getenv("SUPABASE_JWT_SECRET") or SECRET_KEY
 
 _jwks_client: Optional[PyJWKClient] = None
+_cached_jwks_url: Optional[str] = None
+
+
+def _get_supabase_base_url() -> str:
+    raw = (os.getenv("SUPABASE_URL") or "").strip().rstrip("/")
+    if not raw or not (raw.startswith("http://") or raw.startswith("https://")):
+        return DEFAULT_SUPABASE_URL
+    return raw
 
 
 def _get_jwks_client() -> PyJWKClient:
-    global _jwks_client
-    if _jwks_client is None:
+    global _jwks_client, _cached_jwks_url
+    jwks_url = f"{_get_supabase_base_url()}/auth/v1/.well-known/jwks.json"
+    if _jwks_client is None or _cached_jwks_url != jwks_url:
+        _cached_jwks_url = jwks_url
         _jwks_client = PyJWKClient(
-            JWKS_URL,
+            jwks_url,
             headers={"User-Agent": "HumanGuardAI/1.0"},
             timeout=10,
         )
@@ -41,6 +47,7 @@ def _get_jwks_client() -> PyJWKClient:
 def _decode_token_payload(token: str) -> Dict[str, Any]:
     header = jwt.get_unverified_header(token)
     alg = header.get("alg")
+    issuer = f"{_get_supabase_base_url()}/auth/v1"
 
     # ১. Supabase ECC (P-256) -> ES256 via JWKS
     if alg == "ES256":
@@ -50,7 +57,7 @@ def _decode_token_payload(token: str) -> Dict[str, Any]:
             signing_key.key,
             algorithms=["ES256"],
             audience="authenticated",
-            issuer=f"{SUPABASE_URL}/auth/v1",
+            issuer=issuer,
             leeway=30,
         )
 
@@ -61,7 +68,7 @@ def _decode_token_payload(token: str) -> Dict[str, Any]:
             SUPABASE_JWT_SECRET,
             algorithms=[ALGORITHM] if ALGORITHM else ["HS256"],
             audience="authenticated",
-            issuer=f"{SUPABASE_URL}/auth/v1",
+            issuer=issuer,
             leeway=30,
         )
 
