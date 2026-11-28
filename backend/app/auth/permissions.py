@@ -10,28 +10,29 @@ from app.models.user import User
 
 def require_admin(
     current_user: User = Depends(get_current_user),
-):
+) -> User:
     """
     গ্লোবাল সিস্টেম অ্যাডমিন রোল যাচাই করে।
     """
-    if current_user.role != "admin":
+    role = (getattr(current_user, "role", None) or "").strip().lower()
+    if role != "admin":
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Admin access required",
         )
-
     return current_user
 
 
 def get_user_home_role(db: Session, user_id: str, home_id: str) -> Optional[str]:
     """
-    ব্যবহারকারীর হোম অ্যাক্সেস লেভেলের ওপর ভিত্তি করে 'OWNER', 'ADMIN', 'MEMBER', অথবা None রিটার্ন করে।
+    ব্যবহারকারীর হোম অ্যাক্সেস লেভেলের ওপর ভিত্তি করে
+    'OWNER', 'ADMIN', 'MEMBER', অথবা None রিটার্ন করে।
     """
     home = db.query(Home).filter(Home.id == home_id).first()
     if not home:
         return None
 
-    if home.owner_id == user_id:
+    if str(home.owner_id) == str(user_id):
         return "OWNER"
 
     member = (
@@ -43,8 +44,8 @@ def get_user_home_role(db: Session, user_id: str, home_id: str) -> Optional[str]
         .first()
     )
 
-    if member:
-        return member.role.upper()
+    if member and member.role:
+        return member.role.strip().upper()
 
     return None
 
@@ -57,27 +58,29 @@ def verify_home_access(
 ) -> str:
     """
     ব্যবহারকারীর নির্দিষ্ট হোমে অ্যাক্সেস এবং প্রয়োজনীয় রোল আছে কি না তা যাচাই করে।
-    হোম পাওয়া না গেলে 404 এবং অনুমতি না থাকলে 403 এরর থ্রো করে।
+    হোম না থাকলে 404, অ্যাক্সেস না থাকলে বা রোল না মিললে 403 এরর থ্রো করে।
     """
-    role = get_user_home_role(db=db, user_id=user_id, home_id=home_id)
+    home = db.query(Home).filter(Home.id == home_id).first()
+    if not home:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Home not found",
+        )
 
+    role = get_user_home_role(db=db, user_id=user_id, home_id=home_id)
     if role is None:
-        # হোমটি আদৌ বিদ্যমান কি না তা পরীক্ষা করা
-        home_exists = db.query(Home).filter(Home.id == home_id).first()
-        if not home_exists:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Home not found",
-            )
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="You do not have access to this home",
         )
 
-    if required_roles and role not in required_roles:
+    normalized_required = (
+        [r.strip().upper() for r in required_roles] if required_roles else None
+    )
+    if normalized_required and role not in normalized_required:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail=f"Access denied. Requires one of the following roles: {', '.join(required_roles)}",
+            detail=f"Access denied. Requires one of the following roles: {', '.join(normalized_required)}",
         )
 
     return role
