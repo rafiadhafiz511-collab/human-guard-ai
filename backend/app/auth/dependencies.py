@@ -30,7 +30,11 @@ _jwks_client: Optional[PyJWKClient] = None
 def _get_jwks_client() -> PyJWKClient:
     global _jwks_client
     if _jwks_client is None:
-        _jwks_client = PyJWKClient(JWKS_URL)
+        _jwks_client = PyJWKClient(
+            JWKS_URL,
+            headers={"User-Agent": "HumanGuardAI/1.0"},
+            timeout=10,
+        )
     return _jwks_client
 
 
@@ -47,6 +51,7 @@ def _decode_token_payload(token: str) -> Dict[str, Any]:
             algorithms=["ES256"],
             audience="authenticated",
             issuer=f"{SUPABASE_URL}/auth/v1",
+            leeway=30,
         )
 
     # ২. পুরোনো HS256 টোকেনের জন্য fallback
@@ -57,6 +62,7 @@ def _decode_token_payload(token: str) -> Dict[str, Any]:
             algorithms=[ALGORITHM] if ALGORITHM else ["HS256"],
             audience="authenticated",
             issuer=f"{SUPABASE_URL}/auth/v1",
+            leeway=30,
         )
 
     raise jwt.InvalidTokenError(f"Unsupported JWT algorithm: {alg}")
@@ -77,8 +83,12 @@ def get_current_user(
         sub = payload.get("sub")
         email = payload.get("email")
         if not sub and not email:
+            print("AUTH ERROR: missing both sub and email in payload", flush=True)
             raise credentials_exception
-    except Exception:
+    except HTTPException:
+        raise
+    except Exception as exc:
+        print("AUTH ERROR:", repr(exc), flush=True)
         raise credentials_exception
 
     user = None
@@ -91,8 +101,6 @@ def get_current_user(
     if user is None and email:
         user = db.query(User).filter(User.email == str(email)).first()
 
-    # যদি Supabase Auth-এ ইউজার থাকে কিন্তু লোকাল/DB `users` টেবিলে row না থাকে,
-    # তবে টোকেন বৈধ হলে অন্তত `id` ও `email` সহ একটি অবজেক্ট ফেরত দেবে
     if user is None:
         return SimpleNamespace(
             id=str(sub) if sub else None,
